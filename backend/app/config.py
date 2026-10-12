@@ -101,8 +101,9 @@ class Settings(BaseSettings):
     voice_language_codes: list[str] = Field(default_factory=lambda: ["en-US"])
     # VERBATIM keeps the learner's exact words (fillers included); SMART cleans them up.
     voice_transcript_mode: Literal["VERBATIM", "SMART"] = "VERBATIM"
-    # Spoken replies: "auto" uses Vertex AI when GOOGLE_GENAI_USE_VERTEXAI=true (Cloud Run, paid by
-    # the project's credits) and the Gemini API key otherwise; "vertex" / "gemini_api" force one.
+    # Spoken replies: "auto" uses the Gemini API key, with Vertex AI as the fallback when
+    # GOOGLE_GENAI_USE_VERTEXAI=true (Cloud Run): Vertex's audio of the same model clips at the start
+    # of speech (2026-10-13). "vertex" / "gemini_api" force one, with no fallback.
     voice_tts_backend: Literal["auto", "vertex", "gemini_api"] = "auto"
     google_genai_use_vertexai: bool = False
     google_cloud_project: str | None = None

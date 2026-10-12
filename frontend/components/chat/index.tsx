@@ -115,6 +115,64 @@ export function ScriptPrompts({ prompts, onPick, disabled, visible = 3 }: { prom
   );
 }
 
+const EXAMPLES_HIDDEN_KEY = "workweave-examples-hidden";
+
+/**
+ * Things the person can say (owner feedback, 2026-10-13). A click sends the example as their message;
+ * the text stays readable for hands-free use. The first few show; the rest open from "More". Hiding
+ * the row is remembered in this browser (all chats).
+ */
+export function ExamplePrompts({ examples, onPick, disabled, visible = 3 }: { examples: { text: string }[]; onPick: (text: string) => void; disabled?: boolean; visible?: number }) {
+  const [all, setAll] = useState(false);
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return typeof window !== "undefined" && localStorage.getItem(EXAMPLES_HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const id = useId();
+  if (!examples.length) return null;
+  const toggle = () => {
+    setHidden((h) => {
+      try {
+        localStorage.setItem(EXAMPLES_HIDDEN_KEY, h ? "0" : "1");
+      } catch {
+        /* storage blocked: remembered for this page only */
+      }
+      return !h;
+    });
+  };
+  const more = examples.length - visible;
+  const shown = all || more <= 0 ? examples : examples.slice(0, visible);
+  return (
+    <div className="examples" data-testid="example-prompts">
+      <div className="examples-head">
+        <span className="examples-label" id={`${id}-label`}>
+          Try saying
+        </span>
+        <button type="button" className="link-btn" aria-expanded={!hidden} onClick={toggle}>
+          {hidden ? "Show examples" : "Hide"}
+        </button>
+      </div>
+      {!hidden && (
+        <div className="examples-chips" role="group" aria-labelledby={`${id}-label`}>
+          {shown.map((e) => (
+            <button key={e.text} type="button" className="chip example-chip" disabled={disabled} onClick={() => onPick(e.text)}>
+              {e.text}
+            </button>
+          ))}
+          {more > 0 && (
+            <button type="button" className="link-btn" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+              {all ? "Fewer" : `More (${more})`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MicIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

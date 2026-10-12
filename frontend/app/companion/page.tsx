@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useOnChange } from "@/lib/preview/use-on-change";
 import { RequireSession } from "@/components/shell/AppShell";
-import { ChatErrorNote, ChatHeader, Composer, ScriptPrompts, SourceDrawer, Transcript, type ChatMessageView } from "@/components/chat";
+import { ChatErrorNote, ChatHeader, Composer, ExamplePrompts, ScriptPrompts, SourceDrawer, Transcript, type ChatMessageView } from "@/components/chat";
+import { companionExamples, ticketOf } from "@/features/chat/examples";
 import { Dialog, ErrorNotice, Loading, PageHeader, PageError, Status } from "@/components/ui";
 import { newKey, useClient, useCommand, useResource, useRuntime, useSession } from "@/lib/preview/client-context";
 import { VoiceComposer } from "@/features/onboarding/VoiceComposer";
@@ -37,6 +38,8 @@ function Companion() {
   // API mode: voice transport works now; the Companion's AI engine isn't connected yet.
   const caps = useResource((c) => (api ? c.getCapabilities() : Promise.resolve(null)), [api]);
   const voiceAvailable = caps.data?.voice_adapter === "AVAILABLE";
+  // Example prompts name a real teammate (for the lead's delegation example).
+  const people = useResource((c) => (api ? c.listPersonas() : Promise.resolve([])), [pid, api]);
   const [voicePrefs, setVoicePrefs] = useState<VoicePrefs>(() => loadPrefs(prefersQuiet()));
   const updatePrefs = (patch: Partial<VoicePrefs>) => setVoicePrefs(savePrefs(patch, prefersQuiet()));
   // API: stay current when someone else changes the team's work (e.g. the shift lead reassigns a ticket).
@@ -281,6 +284,17 @@ function Companion() {
                 )}
               </div>
             </>
+          )}
+          {api && v.assistant?.status === "ok" && !v.script_prompts.length && (
+            <ExamplePrompts
+              examples={companionExamples({
+                lead: Boolean(dash.data?.can_delegate),
+                ticket: ticketOf(dash.data?.priorities[0]),
+                teammate: (people.data ?? []).find((p) => p.employee_id !== pid && p.team_role === "MEMBER" && p.team_name === session?.persona.team_name)?.first_name,
+              })}
+              disabled={cmd.pending}
+              onPick={(text) => void send(text, "TEXT")}
+            />
           )}
           {api ? (
             <VoiceComposer

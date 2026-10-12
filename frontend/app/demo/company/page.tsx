@@ -121,7 +121,7 @@ function EntryFlow({ card, run, reloadRun }: { card: ScenarioCard; run: LocalDem
           <h2>Preparing your workspace</h2>
           <p className="muted" style={{ marginTop: 6 }}>
             {server
-              ? `Creating your own isolated copy of ${card.company_name} (pack ${card.pack_version}) on the local WorkWeave server. Shared company data isn't changed.`
+              ? `Creating your own isolated copy of ${card.company_name} (pack ${card.pack_version}) on the WorkWeave server. Shared company data isn't changed.`
               : `Creating an isolated run of ${card.company_name} (pack ${card.pack_version}) in this browser tab. No server or database is involved in this preview.`}
           </p>
           <div style={{ marginTop: 12 }}>

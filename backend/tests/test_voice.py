@@ -246,7 +246,8 @@ def test_speech_backend_follows_configuration(monkeypatch):
     from app.config import get_settings
 
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    cases = [({}, "gemini_api"), ({"GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p"}, "vertex"),
+    # "auto" reads aloud with the API key even on Cloud Run (Vertex's audio clips); Vertex is the fallback there.
+    cases = [({}, "gemini_api"), ({"GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p"}, "gemini_api"),
              ({"GOOGLE_GENAI_USE_VERTEXAI": "true"}, "gemini_api"),  # no project: can't address Vertex
              ({"GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p", "VOICE_TTS_BACKEND": "gemini_api"}, "gemini_api"),
              ({"VOICE_TTS_BACKEND": "vertex", "GOOGLE_CLOUD_PROJECT": "p"}, "vertex")]
@@ -257,7 +258,9 @@ def test_speech_backend_follows_configuration(monkeypatch):
             for k, v in env.items():
                 monkeypatch.setenv(k, v)
             get_settings.cache_clear()
-            assert voice_mod.get_voice().speech_backend == expected, env
+            v = voice_mod.get_voice()
+            assert v.speech_backend == expected, env
+            assert (v._fallback is not None) == (env == {"GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p"}), env  # only "auto" on Cloud Run
     finally:
         get_settings.cache_clear()
 
@@ -296,6 +299,26 @@ def test_streamed_speech_without_audio_is_unavailable():
     g = gemini(lambda req: httpx.Response(200, content=sse({"usageMetadata": {}}), headers={"content-type": "text/event-stream"}))
     with pytest.raises(VoiceUnavailable):
         g.speak_stream("Hi")
+
+
+def test_read_aloud_falls_back_to_vertex_only_when_the_api_key_fails():
+    from app.integrations.voice import VertexSpeech
+
+    vertex_calls = []
+
+    def vertex(req: httpx.Request) -> httpx.Response:
+        vertex_calls.append(str(req.url))
+        return httpx.Response(200, content=sse(audio_event(b"\x07\x00", "audio/L16;codec=pcm;rate=24000")), headers={"content-type": "text/event-stream"})
+
+    fallback = VertexSpeech("p", "global", "m", "Kore", httpx.Client(transport=httpx.MockTransport(vertex)), FixedToken())
+    ok = GeminiVoice("k", "l", "m", "Kore", ["en-US"], "VERBATIM", client=httpx.Client(transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, content=sse(audio_event(b"\x01\x00", "audio/L16;codec=pcm;rate=24000")), headers={"content-type": "text/event-stream"}))), fallback=fallback)
+    assert b"".join(ok.speak_stream("Hi").chunks) == b"\x01\x00" and vertex_calls == []  # the API key's audio when it works
+    out_of_balance = GeminiVoice("k", "l", "m", "Kore", ["en-US"], "VERBATIM", client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(429))), fallback=fallback)
+    assert b"".join(out_of_balance.speak_stream("Hi").chunks) == b"\x07\x00" and len(vertex_calls) == 1  # Vertex keeps read-aloud going
+    no_fallback = GeminiVoice("k", "l", "m", "Kore", ["en-US"], "VERBATIM", client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(429))))
+    with pytest.raises(VoiceUnavailable):
+        no_fallback.speak_stream("Hi")
 
 
 def test_vertex_streamed_speech_uses_the_stream_endpoint_with_the_service_token():

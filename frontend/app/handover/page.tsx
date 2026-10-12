@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { RequireSession } from "@/components/shell/AppShell";
-import { ChatErrorNote, ChatHeader, ScriptPrompts, SourceDrawer, Transcript } from "@/components/chat";
+import { ChatErrorNote, ChatHeader, ExamplePrompts, ScriptPrompts, SourceDrawer, Transcript } from "@/components/chat";
+import { handoverExamples } from "@/features/chat/examples";
 import { Dialog, ErrorNotice, Evidence, Loading, PageHeader, PageError, StateView, Status, humanize } from "@/components/ui";
 import { useOnChange } from "@/lib/preview/use-on-change";
 import { newKey, useClient, useCommand, useResource, useRuntime, useSession } from "@/lib/preview/client-context";
@@ -202,6 +203,9 @@ function Handover() {
               <p className="small muted" role="note" style={{ padding: "0 16px" }} data-testid="no-handover-yet">
                 Nothing to ask about yet: the {w.source.name} shift&apos;s lead hasn&apos;t started this handover. The brief and questions open once they do.
               </p>
+            )}
+            {api && w.copilot_available && !noHandover && !w.script_prompts.length && (
+              <ExamplePrompts examples={handoverExamples({ outgoing: Boolean(w.can_check), item: w.items[0]?.title })} disabled={chatCmd.pending} onPick={(text) => void send(text, "TEXT")} />
             )}
             {api && w.copilot_available && !noHandover && <ReadAloudControls cv={cv} />}
             <ChatVoiceComposer cv={cv} label="Ask the handover companion" onSend={send} pending={chatCmd.pending} disabled={noHandover} placeholder="Ask about this handover" />

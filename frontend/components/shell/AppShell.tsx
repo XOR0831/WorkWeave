@@ -8,6 +8,7 @@ import { useUiPrefs } from "@/lib/preview/ui-prefs";
 import type { FailureMode } from "@/lib/clients/preview/PreviewClient";
 import { Dialog, ErrorNotice, humanize, Status } from "@/components/ui";
 import { BrandHeader } from "@/components/shell/Brand";
+import { ThemeToggle } from "@/components/shell/ThemeToggle";
 import { companyEntryHref } from "@/lib/preview/use-search";
 import { EvaluatorAccess, accessUntil } from "@/features/demo/EvaluatorAccess";
 import { ModuleTour, replayTour } from "@/features/tour/ModuleTour";
@@ -30,12 +31,12 @@ export function PreviewBand({ onTools, mode = "preview", limits = false }: { onT
     <div className="preview-band" role="note" aria-label="Preview notice">
       <span className="band-label">
         <i aria-hidden="true" />
-        {mode === "http" ? "Synthetic demo · local backend" : "Interactive UI preview"}
+        {mode === "http" ? "Synthetic demo · live" : "Interactive UI preview"}
       </span>
       <span className="band-text">
         {mode === "http" ? (
           <>
-            <strong>Synthetic companies on the local WorkWeave backend.</strong> Every module uses PostgreSQL; the inbox is delivered through Firestore. AI replies come from the AI engineer&apos;s engines where this server connects them.
+            <strong>Synthetic companies, live on WorkWeave.</strong> Everything you do is saved to the database in your own isolated copy; AI replies come from Gemini, and your inbox updates as work changes.
           </>
         ) : (
           <>
@@ -174,7 +175,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <strong aria-current="page">{current?.label ?? "Workspace"}</strong>
               </nav>
               <div className="topbar-right">
-                <span className="saved-note">{runtime.mode === "http" ? "Saved on the local server" : "Saved in this browser tab only"}</span>
+                <span className="saved-note">{runtime.mode === "http" ? "Saved on the WorkWeave server" : "Saved in this browser tab only"}</span>
+                <ThemeToggle />
                 {tour && (
                   <button className="btn btn-small" onClick={replayTour} data-tour="page-tour">
                     Page tour
@@ -197,12 +199,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link className="brand" href={appBoundary ? "/" : session?.persona_selected ? "/home/" : "/demo/"}>
               <BrandHeader />
             </Link>
-            {!appBoundary && (
-              <span className="entry-actions">
-                <span className="entry-note">Synthetic demo</span>
-                <EvaluatorAccess prompt={pathname === "/"} />
-              </span>
-            )}
+            <span className="entry-actions">
+              {!appBoundary && (
+                <>
+                  <span className="entry-note">Synthetic demo</span>
+                  <EvaluatorAccess prompt={pathname === "/"} />
+                </>
+              )}
+              <ThemeToggle />
+            </span>
           </header>
           <main id="main" className="page" tabIndex={-1}>
             {children}

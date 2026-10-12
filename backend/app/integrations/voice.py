@@ -284,7 +284,7 @@ class VertexSpeech:
 class GeminiVoice:
     provider = "gemini"
 
-    def __init__(self, api_key: str, listen_model: str, tts_model: str, tts_voice: str, language_codes: list[str], transcript_mode: str, client: httpx.Client | None = None, speech: VertexSpeech | None = None):
+    def __init__(self, api_key: str, listen_model: str, tts_model: str, tts_voice: str, language_codes: list[str], transcript_mode: str, client: httpx.Client | None = None, speech: VertexSpeech | None = None, fallback: VertexSpeech | None = None):
         self._key = api_key
         self.listen_model = listen_model
         self.tts_model = tts_model
@@ -292,8 +292,12 @@ class GeminiVoice:
         self.language_codes = language_codes
         self.transcript_mode = transcript_mode
         self._client = client or httpx.Client(timeout=httpx.Timeout(20.0, connect=5.0))
-        # Vertex AI speech when configured (Cloud Run); otherwise TTS through the Gemini API key.
+        # Vertex AI speech only when forced (VOICE_TTS_BACKEND=vertex); otherwise TTS through the Gemini
+        # API key, with Vertex as the fallback when that call fails before any audio (e.g. the key's
+        # prepaid balance has run out). Vertex's audio of the same model clips at the start of speech,
+        # which plays as a sharp squeal (measured 2026-10-13), so it isn't the first choice.
         self._speech = speech
+        self._fallback = fallback
 
     @property
     def available(self) -> bool:
@@ -337,13 +341,26 @@ class GeminiVoice:
         """Audio as it is generated (first sound in ~1.5 s instead of waiting for the whole reply)."""
         if self._speech:
             return self._speech.speak_stream(text)
-        url = f"{API}/models/{self.tts_model}:streamGenerateContent?alt=sse"
-        return _stream_audio(self._client, url, _speech_body(text, self.tts_voice), {"x-goog-api-key": self._key})
+        body = _speech_body(text, self.tts_voice)
+        try:
+            return _stream_audio(self._client, f"{API}/models/{self.tts_model}:streamGenerateContent?alt=sse", body, {"x-goog-api-key": self._key})
+        except VoiceUnavailable:
+            if not self._fallback:
+                raise
+            _log.warning("spoken reply: the Gemini API failed; using Vertex AI instead")
+            return self._fallback.speak_stream(text)
 
     def speak(self, text: str) -> bytes:
         if self._speech:
             return self._speech.speak(text)
-        return _audio_of(self._post(f"{API}/models/{self.tts_model}:generateContent", _speech_body(text, self.tts_voice)))
+        body = _speech_body(text, self.tts_voice)
+        try:
+            return _audio_of(self._post(f"{API}/models/{self.tts_model}:generateContent", body))
+        except VoiceUnavailable:
+            if not self._fallback:
+                raise
+            _log.warning("spoken reply: the Gemini API failed; using Vertex AI instead")
+            return self._fallback.speak(text)
 
 
 _installed: VoiceProvider | None = None
@@ -368,7 +385,7 @@ def get_voice(paid: bool = False) -> VoiceProvider:
     key = paid_key or (s.gemini_api_key.get_secret_value() if s.gemini_api_key else "")
     if not key:
         return NotConfiguredVoice()
-    return GeminiVoice(key, s.voice_listen_model, s.voice_tts_model, s.voice_tts_voice, s.voice_language_codes, s.voice_transcript_mode, _SHARED, vertex_speech())
+    return GeminiVoice(key, s.voice_listen_model, s.voice_tts_model, s.voice_tts_voice, s.voice_language_codes, s.voice_transcript_mode, _SHARED, vertex_speech(), vertex_fallback())
 
 
 _SHARED = httpx.Client(timeout=httpx.Timeout(20.0, connect=5.0))
@@ -376,11 +393,18 @@ _TOKEN = MetadataToken(_SHARED)
 
 
 def vertex_speech() -> VertexSpeech | None:
-    """Speech through Vertex AI when VOICE_TTS_BACKEND says so ("auto": whenever
-    GOOGLE_GENAI_USE_VERTEXAI=true and GOOGLE_CLOUD_PROJECT are set, i.e. on Cloud Run)."""
+    """Speech through Vertex AI first: only when VOICE_TTS_BACKEND=vertex (and a project is set)."""
     s = get_settings()
-    use = s.voice_tts_backend == "vertex" or (s.voice_tts_backend == "auto" and s.google_genai_use_vertexai)
-    if not use or not s.google_cloud_project:
+    if s.voice_tts_backend != "vertex" or not s.google_cloud_project:
+        return None
+    return VertexSpeech(s.google_cloud_project, s.google_cloud_location, s.voice_tts_model, s.voice_tts_voice, _SHARED, _TOKEN)
+
+
+def vertex_fallback() -> VertexSpeech | None:
+    """"auto" on Cloud Run (GOOGLE_GENAI_USE_VERTEXAI=true with a project): Vertex AI speech if the
+    Gemini API call fails, so read-aloud keeps working when the key's balance runs out."""
+    s = get_settings()
+    if s.voice_tts_backend != "auto" or not s.google_genai_use_vertexai or not s.google_cloud_project:
         return None
     return VertexSpeech(s.google_cloud_project, s.google_cloud_location, s.voice_tts_model, s.voice_tts_voice, _SHARED, _TOKEN)
 

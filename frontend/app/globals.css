@@ -910,6 +910,36 @@ th {
   gap: 6px;
   flex-wrap: wrap;
 }
+/* Example prompts in real chats (owner feedback 2026-10-13): solid outline, unlike the dashed
+   "Preview script" fixtures; full sentences so hands-free users can read them out. */
+.examples {
+  border-top: 1px solid var(--line);
+  padding: 8px 14px 6px;
+}
+.examples-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.examples-label {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.examples-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip.example-chip {
+  border-style: solid;
+  text-align: left;
+  white-space: normal;
+}
+.chip.example-chip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 .chip {
   font: inherit;
   font-size: 0.85rem;
@@ -3309,4 +3339,55 @@ input[type="radio"] {
 .tour-count { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   .tour-spot { transition: none; }
+}
+
+/* Dark mode chosen with the theme switch (data-theme="dark") on a light-mode device: the same
+   adjustments as the prefers-color-scheme blocks above. */
+:root[data-theme="dark"] .msg-body,
+:root[data-theme="dark"] .msg-ai .msg-body {
+  background: #22392f;
+}
+:root[data-theme="dark"] .msg-employee .msg-body {
+  background: #2a4638;
+}
+:root[data-theme="dark"] .chip {
+  background: #1f342b;
+  color: var(--ink);
+  border-color: #4b6a5b;
+}
+:root[data-theme="dark"] .excerpt {
+  background: #1f342b;
+}
+:root[data-theme="dark"] .topbar {
+  background: rgb(24 42 35 / 0.6);
+}
+:root[data-theme="dark"] .module-nav a.nav-item {
+  color: var(--ink-2);
+}
+:root[data-theme="dark"] .tabs {
+  background: var(--surface-2);
+}
+:root[data-theme="dark"] .btn,
+:root[data-theme="dark"] .btn:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+:root[data-theme="dark"] input[type="text"],
+:root[data-theme="dark"] input[type="date"],
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select {
+  background: var(--surface-2);
+}
+:root[data-theme="dark"] .avatar {
+  background: #3a3226;
+  color: #f0dcc0;
+}
+:root[data-theme="dark"] .notice-warn {
+  border-color: #6b5626;
+}
+:root[data-theme="dark"] .catalog-hero,
+:root[data-theme="dark"] section[aria-labelledby="h-dash"] {
+  border-color: var(--line);
+}
+:root[data-theme="dark"] .persona-btn[aria-pressed="true"] {
+  background: var(--brand-soft);
 }

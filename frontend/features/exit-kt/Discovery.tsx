@@ -7,7 +7,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChatErrorNote, ChatHeader, Transcript } from "@/components/chat";
+import { ChatErrorNote, ExamplePrompts, ChatHeader, Transcript } from "@/components/chat";
+import { ktExamples } from "@/features/chat/examples";
 import { ChatVoiceComposer, KT_VOICE, ListenButton, ReadAloudControls, useChatVoice } from "@/features/voice/ChatVoice";
 import { Evidence, Status, humanize } from "@/components/ui";
 import { newKey, useClient, useCommand } from "@/lib/preview/client-context";
@@ -171,6 +172,7 @@ export function KtCopilot({ c }: { c: ExitKtCase }) {
           <ChatErrorNote error={cmd.error} onDismiss={cmd.clearError} />
         </div>
       )}
+      {c.kt_available && <ExamplePrompts examples={ktExamples({ responsibility: c.responsibilities[0]?.title })} disabled={cmd.pending} onPick={(text) => void send(text, "TEXT")} />}
       {c.kt_available && <ReadAloudControls cv={cv} />}
       <ChatVoiceComposer cv={cv} label="Ask about this case" onSend={send} pending={cmd.pending} disabled={!c.kt_available} placeholder="What's most at risk? What still needs capturing?" />
     </section>

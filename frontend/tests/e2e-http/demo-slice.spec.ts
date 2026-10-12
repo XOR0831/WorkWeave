@@ -22,8 +22,8 @@ test("catalog comes from GET /scenarios and states it's backend-backed", async (
   await page.goto("/demo/");
   const titles = page.locator("article h2");
   await expect(titles).toHaveText(["Northstar Manufacturing", "Acme Infrastructure Operations", "Harbor Support"]);
-  await expect(page.getByRole("note", { name: "Preview notice" })).toContainText("local WorkWeave backend");
-  await expect(page.getByText("isolated copy on the local WorkWeave server")).toBeVisible();
+  await expect(page.getByRole("note", { name: "Preview notice" })).toContainText("live on WorkWeave");
+  await expect(page.getByText("isolated copy on the WorkWeave server")).toBeVisible();
 });
 
 test("persona choice and switch persist across reloads; cookies are HttpOnly", async ({ page, context }) => {

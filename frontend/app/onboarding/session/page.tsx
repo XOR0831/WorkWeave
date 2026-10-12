@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RequireSession } from "@/components/shell/AppShell";
-import { ChatErrorNote, ChatHeader, Composer, ScriptPrompts, SourceDrawer, Transcript, type ChatMessageView } from "@/components/chat";
+import { ChatErrorNote, ChatHeader, Composer, ExamplePrompts, ScriptPrompts, SourceDrawer, Transcript, type ChatMessageView } from "@/components/chat";
+import { ONBOARDING_EXAMPLES } from "@/features/chat/examples";
 import { Dialog, ErrorNotice, Loading, PageHeader, PageError, Status, humanize } from "@/components/ui";
 import { newKey, useClient, useCommand, useResource, useRuntime, useSession } from "@/lib/preview/client-context";
 import { VoiceComposer } from "@/features/onboarding/VoiceComposer";
@@ -438,6 +439,9 @@ function Tutor() {
                       </span>
                     )}
                   </div>
+                  {caps.data?.conversation_engine === "AVAILABLE" && !v.awaiting_continue && !v.script_prompts.length && (
+                    <ExamplePrompts examples={ONBOARDING_EXAMPLES} disabled={cmd.pending} onPick={(text) => void send(text, "TEXT")} />
+                  )}
                   <VoiceComposer
                     label="Ask, answer, or tell me what you need"
                     onSend={(text, kind) => send(text, kind)}

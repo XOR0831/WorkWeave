@@ -4,6 +4,7 @@ import "./globals.css";
 import { ClientProvider } from "@/lib/preview/client-context";
 import { UiPrefsProvider } from "@/lib/preview/ui-prefs";
 import { AppShell } from "@/components/shell/AppShell";
+import { THEME_SCRIPT } from "@/components/shell/ThemeToggle";
 
 // Inter matches the original prototype's typography.
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -18,7 +19,11 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    // The theme script may set data-theme before React hydrates, hence suppressHydrationWarning.
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>
         <ClientProvider>
           <UiPrefsProvider>

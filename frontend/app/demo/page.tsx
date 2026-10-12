@@ -77,7 +77,7 @@ export default function DemoCatalogPage() {
       </div>
       <p className="small muted catalog-foot">
         {server
-          ? "Each company run is yours alone: an isolated copy on the local WorkWeave server that ends when its session expires."
+          ? "Each company run is yours alone: an isolated copy on the WorkWeave server that ends when its session expires."
           : "Each company run is yours alone and lives only in this browser tab. Nothing is stored on a server in this preview."}
       </p>
     </div>
