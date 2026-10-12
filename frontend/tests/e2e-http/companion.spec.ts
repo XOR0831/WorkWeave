@@ -20,9 +20,9 @@ test("the shift lead sees today's work from the database; the assistant says it 
   await page.goto("/companion/");
   const dash = page.locator(".dash-panel");
   await expect(dash.getByText(/Afternoon shift · ends in/)).toBeVisible();
-  await expect(dash.locator(".metric").first()).toContainText("2");
+  await expect(dash.locator(".metric").first()).toContainText("8"); // #829, #910 and the six sample tickets (seed 17)
   await expect(page.getByText(/Ticket #829 · Machine #14 inspection · Due in 1 h/)).toBeVisible();
-  await expect(page.getByText(/Ticket #910 · Machine #22 document check · Due in 5 h/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Ticket #910 details" })).toBeVisible(); // in the work list (sample tickets due sooner lead the priorities)
   await expect(page.getByText("Replies aren't available yet")).toBeVisible();
   await page.getByLabel("Message the Work Companion").fill("What should I focus on?");
   await page.getByRole("button", { name: "Send" }).click();
@@ -62,7 +62,7 @@ test("delegate, report and resolve: a report waits until the ticket system close
   await report.getByRole("button", { name: "Submit report" }).click();
   await expect(page.getByText("Reported done · waiting for the ticket system").first()).toBeVisible();
   await expect(page.getByText("Waiting for the ticket system", { exact: true })).toBeVisible();
-  await expect(page.locator(".dash-panel .metric").first()).toContainText("1"); // still open (Jamie sees only her own tickets)
+  await expect(page.locator(".dash-panel .metric").first()).toContainText("3"); // still open (Jamie sees only her own: #829 and her two sample tickets)
 
   // Resolving it in the ticket system closes it and the report matches.
   await page.getByRole("link", { name: "Open Northstar Manufacturing ticket system" }).click();
@@ -73,7 +73,7 @@ test("delegate, report and resolve: a report waits until the ticket system close
   await expect(page.getByText("Matches what Jamie Chen reported.")).toBeVisible();
   await page.getByRole("link", { name: "Back to Work Companion" }).click();
   await expect(page.getByRole("button", { name: "Open Ticket #829 details" })).toHaveCount(0); // closed, off the list
-  await expect(page.locator(".dash-panel .metric").first()).toContainText("0");
+  await expect(page.locator(".dash-panel .metric").first()).toContainText("2"); // #829 closed; Jamie's two sample tickets remain
 });
 
 test("every company has its own ticket system", async ({ page }) => {

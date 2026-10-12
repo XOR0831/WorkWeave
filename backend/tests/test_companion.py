@@ -5,6 +5,7 @@ import uuid
 
 from sqlalchemy import text
 
+from tests.test_companion_commands import SAMPLE_TICKETS, drop_sample_tickets
 from tests.test_demo_slice import code, open_company, pick
 from tests.test_usage_caps import caps, used  # noqa: F401 (fixture)
 from tests.test_voice import fake_voice  # noqa: F401 (fixture)
@@ -14,6 +15,8 @@ NORTHSTAR_WS = "00000001-0000-4000-8000-000000000002"
 
 def as_(client, who: str, fresh: bool = True) -> str:
     ws = open_company(client, "northstar", intent="FRESH")["workspace_id"] if fresh else None
+    if ws:
+        drop_sample_tickets(ws)  # these tests describe the original work story
     pick(client, who)
     return ws
 
@@ -67,7 +70,7 @@ def test_work_is_scoped_to_the_visitor_run_and_its_work_read_grants(client, othe
     with engine.connect() as c:
         copied = c.execute(text("SELECT count(*) FROM workweave.work_items WHERE workspace_id=:w AND work_item_id = ANY(CAST(:ids AS uuid[]))"), {"w": ws, "ids": list(mine)}).scalar_one()
         baseline = c.execute(text("SELECT count(*) FROM workweave.work_items WHERE workspace_id=:w"), {"w": NORTHSTAR_WS}).scalar_one()
-    assert copied == len(mine) and baseline == 7  # the pack original is untouched (3 + 4 synthetic past tickets)
+    assert copied == len(mine) and baseline == 13  # the pack original is untouched (3 + 4 synthetic past tickets + 6 samples)
     with engine.begin() as c:  # no work:read grant -> no Companion data
         c.execute(text("""DELETE FROM workweave.permission_grants WHERE workspace_id=:w AND action='work:read'
                           AND actor_id = (SELECT employee_id FROM workweave.employees WHERE workspace_id=:w AND first_name='Alex')"""), {"w": ws})
@@ -107,3 +110,15 @@ def test_voice_input_works_for_the_companion_with_the_demo_caps(client, fake_voi
     r = client.post(url, json={"mode": "HANDS_FREE"})
     assert r.status_code == 200 and r.json()["data"]["token"] == "fake-token" and fake_voice.modes == ["HANDS_FREE"]
     assert client.post(url, json={"mode": "TAP"}).status_code == 429  # same read-aloud/listen caps as onboarding
+
+
+def test_a_fresh_demo_includes_the_pre_assigned_sample_tickets(client, engine):
+    ws = open_company(client, "northstar", intent="FRESH")["workspace_id"]
+    with engine.connect() as c:
+        rows = c.execute(text("""SELECT wi.external_id, e.first_name, a.status, wi.metadata ? 'expected_knowledge'
+                                 FROM workweave.work_items wi
+                                 JOIN workweave.work_item_assignments a ON a.work_item_id = wi.work_item_id AND a.status <> 'CANCELLED'
+                                 JOIN workweave.employees e ON e.employee_id = a.employee_id
+                                 WHERE wi.workspace_id = :w AND wi.external_id = ANY(:ext)"""), {"w": ws, "ext": list(SAMPLE_TICKETS)}).all()
+    assert {r[0] for r in rows} == set(SAMPLE_TICKETS) and all(r[2] == "ASSIGNED" and r[3] for r in rows)
+    assert sorted(r[1] for r in rows) == ["Alex", "Dana", "Jamie", "Jamie", "Sam", "Sam"]  # one per embedded SOP-001 section

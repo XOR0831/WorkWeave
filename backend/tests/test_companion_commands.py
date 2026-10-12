@@ -13,11 +13,30 @@ def k() -> str:
     return str(uuid.uuid4())
 
 
-def fresh(client, who: str, keep_829: bool = False) -> str:
+# Baseline script 17 (since 2026-10-13): six pre-assigned sample tickets for the Companion's guidance.
+SAMPLE_TICKETS = ("Ticket #934", "Ticket #941", "Ticket #947", "Ticket #952", "Ticket #958", "Ticket #963")
+
+
+def drop_sample_tickets(ws: str) -> None:
+    """Removes the sample tickets from a visitor run, so the original work story (#829, #910 and the
+    past tickets) is all that's there."""
+    from app.db import transaction
+
+    with transaction() as c:
+        ids = "(SELECT work_item_id FROM workweave.work_items WHERE workspace_id=:w AND external_id = ANY(:ext))"
+        for t in ("work_item_assignments", "work_item_competency_requirements", "work_events", "handover_items", "delegation_proposal_items"):
+            c.execute(text(f"DELETE FROM workweave.{t} WHERE workspace_id=:w AND work_item_id IN {ids}"), {"w": ws, "ext": list(SAMPLE_TICKETS)})
+        c.execute(text(f"DELETE FROM workweave.work_items WHERE workspace_id=:w AND work_item_id IN {ids}"), {"w": ws, "ext": list(SAMPLE_TICKETS)})
+
+
+def fresh(client, who: str, keep_829: bool = False, keep_samples: bool = False) -> str:
     """A new Northstar run as `who`. Since 2026-10-11 the baseline keeps Ticket #829 assigned to Alex
     (seed 20). Most work tests were written for #829 starting unassigned (the seeded delegation
-    proposal assigns it), so they get that by default; `keep_829=True` keeps the baseline as shipped."""
+    proposal assigns it), so they get that by default; `keep_829=True` keeps the baseline as shipped.
+    The sample tickets (seed 17) are left out unless `keep_samples=True`."""
     ws = open_company(client, "northstar", intent="FRESH")["workspace_id"]
+    if not keep_samples:
+        drop_sample_tickets(ws)
     if not keep_829:
         from app.db import transaction
 

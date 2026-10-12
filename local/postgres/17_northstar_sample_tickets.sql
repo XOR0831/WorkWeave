@@ -1,6 +1,6 @@
--- Northstar sample tickets for testing the AI Work Companion's guidance flow (ADR-033).
--- Local-only test data: NOT in app/ops/baseline.py SCRIPTS, so disposable test databases and
--- fresh cloud setups don't get it. Apply to the local dev database only, with approval.
+-- Northstar sample tickets for the AI Work Companion's guidance flow (ADR-033).
+-- Part of the baseline since 2026-10-13 (owner): app/ops/baseline.py SCRIPTS applies it to fresh
+-- databases (cloud setup, disposable test databases). Applied to the local dev database 2026-10-08.
 --
 -- One ticket per embedded SOP-001 v3.4 section (the only Northstar knowledge with chunks and
 -- embeddings). Each ticket describes a situation that section answers, is ASSIGNED (the engine

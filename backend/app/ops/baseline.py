@@ -22,6 +22,7 @@ SCRIPTS = [
     "12_reconcile_sop001_v34_sections.sql",
     "15_machine_fundamentals_v11.sql",
     "16_distinct_shift_rosters.sql",
+    "17_northstar_sample_tickets.sql",
     "18_curriculum_manage_grants.sql",
     "19_exit_kt_history.sql",
     "20_northstar_829_owner.sql",

@@ -65,7 +65,8 @@ test("module screens say they aren't connected instead of showing fixture data",
   await pickPersona(page, "Sam Kim");
   // Learning, work and Exit KT are database-backed now: home shows no "not connected" card.
   await expect(page.getByText("Not connected yet")).toHaveCount(0);
-  await expect(page.locator("section[aria-labelledby='h-work']")).toContainText("Nothing is assigned to you right now"); // real data: Northstar assigns no open ticket to Sam
+  await expect(page.locator("section[aria-labelledby='h-work']")).toContainText("2 open"); // real data: Sam's two sample tickets (seed 17)
+  await expect(page.locator("section[aria-labelledby='h-work']")).toContainText("Ticket #947");
   await expect(page.locator("section[aria-labelledby='h-learning']")).toContainText("0 of 3 required subtopics complete · 4 optional");
   // Every module screen is database-backed now. The inbox is wired to Firestore (ADR-048); this test server
   // runs without it (NOTIFICATIONS=none), so the inbox says so instead of showing an empty list.
