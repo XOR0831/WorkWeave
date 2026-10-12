@@ -1,0 +1,124 @@
+name: workweave-local
+
+# The whole WorkWeave stack on one machine, built from the same images as the cloud (ADR-052):
+#   docker compose up -d --build --wait          site http://localhost:3080/demo/  API http://localhost:8080/api/health
+#   docker compose up -d --wait postgres         just the database (for `uvicorn --reload` / `next dev` development)
+#   docker compose --profile setup run --rm migrate   baseline (fresh database only) + Alembic; add
+#                                                     --activate-reviewed-packs to publish the demo packs
+# Settings: local/.env (database) and ai/.env (Gemini, Google OAuth client, the calendar test account).
+
+services:
+  postgres:
+    # PostgreSQL 16 with pgvector available; no AI/RAG implementation.
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-workweave}
+      POSTGRES_USER: ${POSTGRES_USER:-workweave}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in local/.env or your shell}
+    ports:
+      # Host access only. Do not expose the development database to the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    stop_grace_period: 30s
+
+  firestore:
+    # Firestore emulator for the notification inbox projection only (blueprint/19, ADR-048). Not a business
+    # database; nothing here is authoritative. Data is kept in memory and cleared when the container stops.
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    restart: unless-stopped
+    command: ["gcloud", "emulators", "firestore", "start", "--host-port=0.0.0.0:8085", "--project=workweave-local"]
+    ports:
+      # Host access only, like PostgreSQL.
+      - "127.0.0.1:${FIRESTORE_PORT:-8085}:8085"
+
+  api:
+    # The cloud API image: API + graph host (the four LangGraph graphs) + calendar sign-in service,
+    # started by backend/start.sh. Replaces the four `langgraph dev` servers on 5678-5681.
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: workweave-api:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      firestore:
+        condition: service_started
+    # The AI engineer's settings: GEMINI_* models and key, GOOGLE_CLIENT_ID/SECRET, WORKWEAVE_EMPLOYEE_EMAIL.
+    # Values under `environment` win (her file's PORT/DB_* are for `langgraph dev` and aren't used here).
+    env_file:
+      - path: ../ai/.env
+        required: false
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-workweave}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-workweave}
+      WORKWEAVE_ENV: development
+      COOKIE_SECURE: "false"
+      # Gemini: the API key locally; the cloud uses Vertex AI (ai_gemini in Terraform).
+      AI_GEMINI: api_key
+      TUTOR_ENGINE: langgraph
+      LANGGRAPH_URL: http://127.0.0.1:8123
+      COMPANION_ENGINE: langgraph
+      LANGGRAPH_COMPANION_URL: http://127.0.0.1:8123
+      LANGGRAPH_HANDOVER_URL: http://127.0.0.1:8123
+      LANGGRAPH_EXIT_KT_URL: http://127.0.0.1:8123
+      NOTIFICATIONS: firestore
+      FIRESTORE_PROJECT: workweave-local
+      FIRESTORE_EMULATOR_HOST: firestore:8085
+      DISPATCHER_IN_PROCESS: "true"
+      # Calendar sign-in through the API, as in the cloud. Add this redirect URI to the OAuth client.
+      COMPANION_CALENDAR: "true"
+      CALENDAR_CONNECT_URL: /api/calendar/auth/google
+      GOOGLE_REDIRECT_URI: http://localhost:${WEB_PORT:-3080}/api/calendar/auth/google/callback
+      # Uploaded source originals: the same folder the reload dev server uses (local/storage, git-ignored).
+      LOCAL_STORAGE_DIR: /srv/local/storage
+    volumes:
+      - ./storage:/srv/local/storage
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  web:
+    # The static site in API mode, served like Firebase Hosting with /api/** passed to the API.
+    build:
+      context: ../frontend
+    image: workweave-web:local
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PORT: "3080"
+      API_ORIGIN: http://api:8080
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3080}:3080"
+
+  migrate:
+    # One-off: `docker compose --profile setup run --rm migrate [--activate-reviewed-packs]`.
+    # A fresh database gets the reviewed baseline + Alembic; an existing one gets Alembic only.
+    profiles: ["setup"]
+    image: workweave-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-workweave}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-workweave}
+      WORKWEAVE_ENV: development
+    entrypoint: ["python", "-m", "app.ops.migrate"]
+
+volumes:
+  postgres_data:

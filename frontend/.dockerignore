@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+out-http
+playwright-report
+test-results
+.superdesign
+.firebase
+*.tsbuildinfo
+.DS_Store

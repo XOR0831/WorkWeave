@@ -1,0 +1,162 @@
+{
+  "schema": "workweave.pack-catalog/1",
+  "synthetic": true,
+  "note": "Reviewed public catalog metadata for an existing local review fixture (src/local/postgres/02_seed.sql). Not a validated scenario pack (blueprint/16).",
+  "company_key": "northstar",
+  "pack_version": "review-only-v1",
+  "presentation": {
+    "story": "Sam learns to tell current procedure from history, Alex captures a missing reporting practice during a role transition, and Morgan approves the Machine #14 handover to Jamie.",
+    "role_in_review": "Primary recorded demo",
+    "terminology": {
+      "workItem": "ticket",
+      "workItems": "tickets",
+      "team": "maintenance team",
+      "asset": "machine"
+    },
+    "catalog_order": 1
+  },
+  "personas": [
+    {
+      "baseline_employee_id": "00000001-0000-4000-8000-000000000008",
+      "display_name": "Sam Kim",
+      "display_order": 1,
+      "scenario_note": "New learner assigned Machine Fundamentals",
+      "featured": true,
+      "showcase": {
+        "label": "New learner",
+        "headline": "Use Sam to test AI Onboarding.",
+        "features": [
+          {
+            "module": "ONBOARDING",
+            "text": "Learn Machine Fundamentals with the AI tutor, by voice or text"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "Check questions, hints and saved progress"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "Sources from the approved SOP beside the chat"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000001-0000-4000-8000-000000000009",
+      "display_name": "Alex Rivera",
+      "display_order": 2,
+      "scenario_note": "Machine #14 owner, shift lead, role transition in progress",
+      "featured": true,
+      "showcase": {
+        "label": "Afternoon shift lead",
+        "headline": "Use Alex to test the lead's side.",
+        "features": [
+          {
+            "module": "COMPANION",
+            "text": "See the team's tickets; assign, reassign or take one by chat; ask why a ticket went to someone"
+          },
+          {
+            "module": "HANDOVER",
+            "text": "Publish the handover to the Evening shift"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Hand over Machine #14 knowledge before a role change"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000001-0000-4000-8000-000000000010",
+      "display_name": "Jamie Chen",
+      "display_order": 3,
+      "scenario_note": "Proposed Machine #14 successor; returning learner",
+      "featured": true,
+      "showcase": {
+        "label": "Technician and successor",
+        "headline": "Use Jamie to test a team member's day.",
+        "features": [
+          {
+            "module": "COMPANION",
+            "text": "Your tickets, procedure guidance, report progress, resolve in the ticket system"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "A returning learner"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Receive Alex's Machine #14 knowledge"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000001-0000-4000-8000-000000000011",
+      "display_name": "Morgan Lee",
+      "display_order": 4,
+      "scenario_note": "Reviews knowledge and KT packages; confirms ownership transfer",
+      "featured": true,
+      "showcase": {
+        "label": "Knowledge reviewer",
+        "headline": "Use Morgan to test reviews and approvals.",
+        "features": [
+          {
+            "module": "REVIEWS",
+            "text": "Review knowledge notes and KT packages before they become shared knowledge"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Confirm the Machine #14 ownership transfer"
+          },
+          {
+            "module": "CURRICULA",
+            "text": "Browse the approved curricula and sources"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000001-0000-4000-8000-000000009001",
+      "display_name": "Priya Nair",
+      "display_order": 5,
+      "scenario_note": "Lead for the next Morning shift, with Sam Kim",
+      "featured": false,
+      "showcase": {
+        "label": "Morning shift lead",
+        "headline": "Use Priya to test a lead who's off shift.",
+        "features": [
+          {
+            "module": "HANDOVER",
+            "text": "Read the published handovers and confirm what reached your team"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Lead actions (assigning, delegating, publishing) wait until the Morning shift starts"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000001-0000-4000-8000-000000009002",
+      "display_name": "Dana Brooks",
+      "display_order": 6,
+      "scenario_note": "Evening shift lead after Alex Rivera, with Jamie Chen",
+      "featured": false,
+      "showcase": {
+        "label": "Evening shift lead",
+        "headline": "Use Dana to test the receiving shift.",
+        "features": [
+          {
+            "module": "HANDOVER",
+            "text": "Read the Afternoon handover once Alex publishes it, and confirm receipt"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Lead actions (assigning, delegating, publishing) wait until the Evening shift starts"
+          }
+        ]
+      }
+    }
+  ]
+}

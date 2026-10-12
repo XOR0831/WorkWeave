@@ -1,0 +1,159 @@
+{
+  "schema": "workweave.pack-catalog/1",
+  "synthetic": true,
+  "note": "Reviewed public catalog metadata for an existing local review fixture (src/local/postgres/02_seed.sql). Not a validated scenario pack (blueprint/16).",
+  "company_key": "harbor",
+  "pack_version": "review-only-v1",
+  "presentation": {
+    "story": "Nora learns the approved account guide, Leo hands the support queue across shifts and prepares to move off priority-account escalation, and Ravi approves the hand-off to Mia.",
+    "role_in_review": "Portability across industries",
+    "terminology": {
+      "workItem": "case",
+      "workItems": "cases",
+      "team": "support queue",
+      "asset": "account",
+      "queue": "support queue"
+    },
+    "catalog_order": 3
+  },
+  "personas": [
+    {
+      "baseline_employee_id": "00000002-0000-4000-8000-000000000008",
+      "display_name": "Nora Santos",
+      "display_order": 1,
+      "scenario_note": "New learner assigned Account Support Fundamentals",
+      "featured": true,
+      "showcase": {
+        "label": "New learner",
+        "headline": "Use Nora to test AI Onboarding.",
+        "features": [
+          {
+            "module": "ONBOARDING",
+            "text": "Learn Account Support Fundamentals with the AI tutor, by voice or text"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "Check questions, hints and saved progress"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "Sources from the approved escalation guide beside the chat"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000002-0000-4000-8000-000000000009",
+      "display_name": "Leo Cruz",
+      "display_order": 2,
+      "scenario_note": "Queue shift lead; moving off priority-account escalation",
+      "featured": true,
+      "showcase": {
+        "label": "Queue shift lead",
+        "headline": "Use Leo to test the lead's side.",
+        "features": [
+          {
+            "module": "COMPANION",
+            "text": "See the queue's cases; assign, reassign or take one by chat; ask why a case went to someone"
+          },
+          {
+            "module": "HANDOVER",
+            "text": "Publish the handover to the Evening shift"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Hand over priority-account escalation before a role change"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000002-0000-4000-8000-000000000010",
+      "display_name": "Mia Reyes",
+      "display_order": 3,
+      "scenario_note": "Proposed successor for priority-account escalation",
+      "featured": true,
+      "showcase": {
+        "label": "Support agent and successor",
+        "headline": "Use Mia to test a team member's day.",
+        "features": [
+          {
+            "module": "COMPANION",
+            "text": "Your cases, guidance from the approved guide, report progress, resolve in the case system"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Receive Leo's priority-account escalation knowledge"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000002-0000-4000-8000-000000000011",
+      "display_name": "Ravi Patel",
+      "display_order": 4,
+      "scenario_note": "Reviews knowledge and packages; confirms transfers",
+      "featured": true,
+      "showcase": {
+        "label": "Knowledge reviewer",
+        "headline": "Use Ravi to test reviews and approvals.",
+        "features": [
+          {
+            "module": "REVIEWS",
+            "text": "Review knowledge notes and KT packages before they become shared knowledge"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Confirm the escalation ownership transfer"
+          },
+          {
+            "module": "CURRICULA",
+            "text": "Browse the approved curricula and sources"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000002-0000-4000-8000-000000009001",
+      "display_name": "Cora Mendoza",
+      "display_order": 5,
+      "scenario_note": "Lead for the next Morning shift, with Nora Santos",
+      "featured": false,
+      "showcase": {
+        "label": "Morning shift lead",
+        "headline": "Use Cora to test a lead who's off shift.",
+        "features": [
+          {
+            "module": "HANDOVER",
+            "text": "Read the published handovers between shifts"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Lead actions (assigning, delegating, publishing) wait until the Morning shift starts"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000002-0000-4000-8000-000000009002",
+      "display_name": "Tessa Lim",
+      "display_order": 6,
+      "scenario_note": "Evening shift lead after Leo Cruz, with Mia Reyes",
+      "featured": false,
+      "showcase": {
+        "label": "Evening shift lead",
+        "headline": "Use Tessa to test the receiving shift.",
+        "features": [
+          {
+            "module": "HANDOVER",
+            "text": "Read the Afternoon handover once Leo publishes it, and confirm receipt"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Lead actions (assigning, delegating, publishing) wait until the Evening shift starts"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,196 @@
+{
+  "schema": "workweave.pack-catalog/1",
+  "synthetic": true,
+  "note": "Reviewed public catalog metadata for an existing local review fixture (src/local/postgres/02_seed.sql). Not a validated scenario pack (blueprint/16).",
+  "company_key": "acme",
+  "pack_version": "review-only-v1",
+  "presentation": {
+    "story": "Alex delegates INC-203, INC-221 and ACT-101, validates John's completion report, and carries the same items through three shifts while Pat prepares a departure handover.",
+    "role_in_review": "Delegation and three-shift acceptance",
+    "terminology": {
+      "workItem": "incident",
+      "workItems": "incidents and activities",
+      "team": "platform team",
+      "asset": "service"
+    },
+    "catalog_order": 2
+  },
+  "personas": [
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000000008",
+      "display_name": "Alex Chen",
+      "display_order": 1,
+      "scenario_note": "Afternoon shift lead; led the completed earlier Morning shift",
+      "featured": true,
+      "showcase": {
+        "label": "Afternoon shift lead",
+        "headline": "Use Alex to test the lead's side.",
+        "features": [
+          {
+            "module": "COMPANION",
+            "text": "See the team's incidents; assign, reassign or take one by chat; ask why an incident went to someone"
+          },
+          {
+            "module": "HANDOVER",
+            "text": "Publish the handover to the Evening shift"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000000009",
+      "display_name": "John Tan",
+      "display_order": 2,
+      "scenario_note": "Payment gateway evidence; reported INC-203 complete",
+      "featured": false,
+      "showcase": {
+        "label": "Engineer",
+        "headline": "Use John to test a team member's day.",
+        "features": [
+          {
+            "module": "COMPANION",
+            "text": "Your incidents, guidance from the approved runbook, report progress, resolve in the incident system"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Report INC-203 complete; the incident system still decides when it's closed"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000000010",
+      "display_name": "Maria Garcia",
+      "display_order": 3,
+      "scenario_note": "Network diagnostics evidence; proposed successor for Pat",
+      "featured": false,
+      "showcase": {
+        "label": "Engineer and successor",
+        "headline": "Use Maria to test the successor's side.",
+        "features": [
+          {
+            "module": "EXIT_KT",
+            "text": "Read Pat's approved payment gateway package and confirm receipt"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Your incidents, guidance from the approved runbook, report progress"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000000011",
+      "display_name": "Sam Lim",
+      "display_order": 4,
+      "scenario_note": "Database operations evidence; assigned Deployment Fundamentals",
+      "featured": true,
+      "showcase": {
+        "label": "New learner",
+        "headline": "Use Sam to test AI Onboarding.",
+        "features": [
+          {
+            "module": "ONBOARDING",
+            "text": "Learn Deployment Fundamentals with the AI tutor, by voice or text"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "Check questions, hints and saved progress"
+          },
+          {
+            "module": "ONBOARDING",
+            "text": "Sources from the approved runbook beside the chat"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000000012",
+      "display_name": "Pat Reyes",
+      "display_order": 5,
+      "scenario_note": "Departing; owns payment gateway operations",
+      "featured": true,
+      "showcase": {
+        "label": "Departing service owner",
+        "headline": "Use Pat to test Exit Knowledge Transfer.",
+        "features": [
+          {
+            "module": "EXIT_KT",
+            "text": "Capture payment gateway operations knowledge before leaving"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Review the transfer package for a successor"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000000013",
+      "display_name": "Morgan Lee",
+      "display_order": 6,
+      "scenario_note": "Reviews knowledge and packages; confirms transfers",
+      "featured": true,
+      "showcase": {
+        "label": "Knowledge reviewer",
+        "headline": "Use Morgan to test reviews and approvals.",
+        "features": [
+          {
+            "module": "REVIEWS",
+            "text": "Review knowledge notes and KT packages before they become shared knowledge"
+          },
+          {
+            "module": "EXIT_KT",
+            "text": "Confirm the payment gateway ownership transfer"
+          },
+          {
+            "module": "CURRICULA",
+            "text": "Browse the approved curricula and sources"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000009001",
+      "display_name": "Neha Shah",
+      "display_order": 7,
+      "scenario_note": "Lead for the next Morning shift, with Sam Lim",
+      "featured": false,
+      "showcase": {
+        "label": "Morning shift lead",
+        "headline": "Use Neha to test a lead who's off shift.",
+        "features": [
+          {
+            "module": "HANDOVER",
+            "text": "Read the published handovers between shifts"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Lead actions (assigning, delegating, publishing) wait until the Morning shift starts"
+          }
+        ]
+      }
+    },
+    {
+      "baseline_employee_id": "00000003-0000-4000-8000-000000009002",
+      "display_name": "Aisha Rahman",
+      "display_order": 8,
+      "scenario_note": "Evening shift lead after Alex Chen, with Maria Garcia",
+      "featured": false,
+      "showcase": {
+        "label": "Evening shift lead",
+        "headline": "Use Aisha to test the receiving shift.",
+        "features": [
+          {
+            "module": "HANDOVER",
+            "text": "Read the Afternoon handover once Alex publishes it, and confirm receipt"
+          },
+          {
+            "module": "COMPANION",
+            "text": "Lead actions (assigning, delegating, publishing) wait until the Evening shift starts"
+          }
+        ]
+      }
+    }
+  ]
+}

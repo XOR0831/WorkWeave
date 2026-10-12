@@ -1,0 +1,15 @@
+# Northstar SOP source files
+
+The v3.2 and v3.3 Markdown files are portable copies of the **synthetic fixture content** in `src/local/postgres/02_seed.sql` and `knowledge_document_versions.content`. The expanded v3.4 file is a **synthetic approved/current local-test fixture**. Its [insert script](../../../local/postgres/05_northstar_full_sop_approved_test.sql) was applied to the local Northstar database on 2026-09-28. None is a real machine-operation procedure or evidence that a chunking/embedding pipeline has run.
+
+| File | Document version ID | Seeded status | Intended use |
+| --- | --- | --- | --- |
+| [SOP-001-v3.3.md](SOP-001-v3.3.md) | `00000001-0000-4000-8000-000000000067` | `APPROVED` / `SUPERSEDED` locally after v3.4 overlay | Baseline demo source, now historical in the local test database |
+| [SOP-001-v3.2.md](SOP-001-v3.2.md) | `00000001-0000-4000-8000-000000000066` | `APPROVED` / `SUPERSEDED` | Historical/version-filtering test only; never present as current guidance |
+| [SOP-001-v3.4-TEST.md](SOP-001-v3.4-TEST.md) | `00000001-0000-4000-8000-000000000951` | Synthetic `APPROVED` / `CURRENT` in local DB | Full source for database-backed ingestion, chunking, embeddings, and retrieval tests |
+
+All three concern Northstar Manufacturing (`organization_id`: `00000001-0000-4000-8000-000000000001`, `workspace_id`: `00000001-0000-4000-8000-000000000002`) and the `SOP-001` document (`document_id`: `00000001-0000-4000-8000-000000000065`). The seeded v3.2/v3.3 versions share fixture `source_id` `00000001-0000-4000-8000-000000000064`; the optional v3.4 insert uses new `source_id` `00000001-0000-4000-8000-000000000950`. Keep fixture metadata outside the v3.2/v3.3 Markdown bodies when comparing with seeded `content`. Those two files have a conventional final newline; the seeded SQL strings do not, so strip exactly one terminal newline for byte-for-byte comparison. The v3.4 SQL literal includes the Markdown file's exact trailing newline.
+
+For current Northstar retrieval in the local test database, target v3.4, **not** v3.3 or v3.2. The older v3.3 chunks remain historical and unembedded. Preserve section headings, source version, organization/workspace, and source spans in metadata. The ingestion job should idempotently generate v3.4 chunks and embeddings; none were inserted by the SQL fixture.
+
+For a realistic hierarchy-aware chunking test, target **v3.4 version ID `...951` explicitly**: treat the H1 as the document, H2 as topic, H3 as section/subtopic, and H4 as optional subsection. Preserve table rows, the warning, lists, and worked examples within their parent sections; split oversized H4 sections only if necessary. The script added the full approved synthetic version, source provenance and three curriculum mappings, but **no chunks or embeddings**—your ingestion code should create those. It made v3.3 historical, so the baseline demo's v3.3-current wording must be updated before recording from this local database. The approval is synthetic test state, not evidence of review by real Northstar personnel. None of these files specifies machine settings or an operating procedure.

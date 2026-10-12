@@ -1,0 +1,9 @@
+# Terraform state and plans can contain sensitive values: never commit them.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# Real variable files hold the billing account and alert email; commit only the examples.
+*.tfvars
+!*.tfvars.example

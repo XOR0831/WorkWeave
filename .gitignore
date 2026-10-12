@@ -1,0 +1,55 @@
+# --- Secrets: never commit. Copy the *.example files instead. ---
+.env
+.env.*
+!.env.example
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+*.pem
+*.key
+token*.json
+credentials*.json
+client_secret*.json
+service-account*.json
+
+# --- Local runtime data ---
+# LangGraph dev checkpoints hold conversation threads from local testing.
+.langgraph_api/
+local/storage/
+*.dump
+*.sql.gz
+
+# --- Environments, dependencies and builds ---
+.venv/
+ai/.ai_builder_env/
+node_modules/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.next/
+out/
+out-http/
+next-env.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+.firebase/
+.firebase.deploy.json
+
+# --- Internal working notes (kept locally, not published) ---
+CLAUDE.md
+build_spec.md
+plugins.txt
+.claude/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Design-tool working files ---
+.superdesign/

@@ -1,0 +1,18 @@
+{
+    "dockerfile_lines": [],
+    "graphs": {
+        "ai_shift_handover": "./ai_shift_handover.py:graph"
+    },
+    "python_version": "3.11",
+    "env": "../.env",
+    "dependencies": [
+        "."
+    ],
+    "name": "Attach to LangGraph",
+    "type": "debugpy",
+    "request": "attach",
+    "connect": {
+        "host": "0.0.0.0",
+        "port": 5680
+    }
+}

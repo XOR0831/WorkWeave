@@ -1,0 +1,20 @@
+# Build context is the repository root (see backend/Dockerfile). Only backend code, baseline SQL and seed packs are copied.
+**/__pycache__
+**/.venv
+**/.pytest_cache
+**/node_modules
+frontend/
+local/.env
+local/*.env
+**/.env
+**/*.tfstate*
+infra/
+.git/
+ai/.ai_builder_env/
+**/.langgraph_api
+ai/.env
+**/*.tfvars
+CLAUDE.md
+build_spec.md
+.superdesign/
+**/.DS_Store

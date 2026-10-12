@@ -1,0 +1,34 @@
+# Python packages for the AI process in the API container: the four LangGraph graphs in ../ai,
+# the Companion's calendar sign-in service and the ingestion package. Versions match the AI
+# engineer's tested environment (ai/.ai_builder_env, 2026-10-12). requirements.lock is generated:
+#   uv pip compile requirements.in -o requirements.lock --python-version 3.13 --python-platform x86_64-manylinux_2_28 --generate-hashes
+# Not needed in the server: ai/voice (local console), langchain-openai/anthropic, notebook, langgraph-cli.
+
+# Graphs
+langgraph==1.2.12
+langgraph-checkpoint==4.2.0
+langchain-core==1.6.6
+langchain-google-genai==4.4.0
+google-genai==2.25.0
+pydantic==2.13.5
+sqlalchemy==2.0.54
+psycopg[binary]==3.3.6
+python-dotenv==1.2.4
+requests==2.34.2
+typing-extensions==4.16.0
+
+# Ingestion (ai/vector_embedding)
+markdown-it-py==4.2.0
+numpy==2.5.3
+
+# Calendar sign-in service (ai/ai_work_companion/google_calendar_auth.py)
+fastapi==0.143.0
+uvicorn==0.54.0
+google-auth==2.58.0
+google-auth-oauthlib==1.5.0
+google-api-python-client==2.201.0
+
+# Graph host: Postgres checkpoints and the HTTP server
+langgraph-checkpoint-postgres==3.1.2
+psycopg-pool==3.3.3
+orjson==3.12.0

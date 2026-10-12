@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+project_id      = "workweave-demo-1234"
+billing_account = "XXXXXX-XXXXXX-XXXXXX"
+alert_email     = "you@example.com"
+site_id         = "workweave-demo-1234"
+# region        = "asia-east1"
+# sql_tier      = "db-g1-small"
+trial_start = { year = 2026, month = 10, day = 4 }
+trial_end   = { year = 2027, month = 1, day = 2 }
+# Second apply, after pushing the image:
+# api_image   = "asia-east1-docker.pkg.dev/workweave-demo-1234/workweave/api@sha256:<digest>"
+# min_instances = 1   # only during judging
+# Companion calendar (ADR-052): add both OAuth secret versions first, register
+#   https://<site_id>.web.app/api/calendar/auth/google/callback in the OAuth client, then:
+# calendar_oauth_ready   = true
+# calendar_account_email = "demo-calendar@example.com"
+# ai_gemini              = "api_key"  # fallback if a graph model isn't available on Vertex AI
