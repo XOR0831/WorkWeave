@@ -13,11 +13,12 @@ already committed (never arbitrary text), so the endpoint can't be used as a gen
 only the session's own employee, only the companion's saved replies.
 """
 
+import re
 import threading
 import uuid as _uuid
 from collections import OrderedDict
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any
 
 from sqlalchemy import text
@@ -109,24 +110,124 @@ class AudioCache:
 audio_cache = AudioCache()
 CHUNK = 32 * 1024
 
+# Read-aloud sentence by sentence (owner, 2026-10-13). Firebase Hosting holds a streamed response
+# until it is complete, so one request for a whole reply plays nothing until all of it is generated
+# (about 10 s for a long Companion reply). The browser instead asks for one part at a time, plays it
+# and fetches the next meanwhile; each part also plays as one piece of audio, which avoids the
+# clicks Chrome makes where many small pieces join. The split is deterministic text handling only.
+FIRST_PART_MIN = 20  # a first sentence shorter than this ("Sure!") is joined to the next
+FIRST_PART_MAX = 120  # a longer first sentence starts with its first clause, so sound starts sooner
+PART_MIN = 80  # later parts gather sentences until at least this long ...
+PART_MAX = 320  # ... without going past this (a single longer sentence stays whole)
+# A sentence ends at . ! ? or … (optionally followed by a closing quote or bracket), then a space,
+# then something that starts a sentence. "e.g. this" and "3.5" don't split.
+_CLOSE = "\"'”’)]"
+_SENTENCE_END = re.compile(rf"(?:(?<=[.!?…])|(?<=[.!?…][{re.escape(_CLOSE)}]))\s+(?=[\"'“‘(\[]?[A-Z0-9#*])")
+_CLAUSE = re.compile(r"(?:, |; |: | — | – |—)")
 
-def speech_stream(token: str | None, session_id: str, message_id: str) -> SpeechStream:
+
+def _first_clause(sentence: str) -> list[str]:
+    """A long opening sentence split once at a clause break, so its first words play sooner."""
+    if len(sentence) <= FIRST_PART_MAX:
+        return [sentence]
+    cut = None
+    for m in _CLAUSE.finditer(sentence):
+        if 30 <= m.end() <= FIRST_PART_MAX:
+            cut = m.end()
+    if cut is None:
+        return [sentence]
+    return [sentence[:cut].rstrip(), sentence[cut:].lstrip()]
+
+
+def speech_parts(reply: str) -> list[str]:
+    """The reply as consecutive parts to read aloud: its sentences, in order, unchanged. Sentences
+    from separate lines are joined with a line break (a pause), never run together."""
+    pieces: list[tuple[str, bool]] = []  # (sentence, starts a new line)
+    for line in reply.splitlines():
+        line = " ".join(line.split())
+        for i, sentence in enumerate(x.strip() for x in _SENTENCE_END.split(line) if x.strip()):
+            pieces.append((sentence, i == 0))
+    parts: list[str] = []
+    for sentence, new_line in pieces:
+        minimum = FIRST_PART_MIN if len(parts) == 1 else PART_MIN
+        if parts and len(parts[-1]) < minimum and len(parts[-1]) + 1 + len(sentence) <= PART_MAX:
+            parts[-1] = parts[-1] + ("\n" if new_line else " ") + sentence
+        else:
+            parts.append(sentence)
+    if not parts:
+        return [reply]
+    return _first_clause(parts[0]) + parts[1:]
+
+
+class _Charged:
+    """Replies already charged in this process, so a reply read in parts costs one allowance."""
+
+    def __init__(self, size: int = 4096):
+        self._keys: OrderedDict[tuple[str, ...], None] = OrderedDict()
+        self._size = size
+        self._lock = threading.Lock()
+
+    def first(self, key: tuple[str, ...]) -> bool:
+        """True the first time a key is seen (charge now), False after."""
+        with self._lock:
+            if key in self._keys:
+                self._keys.move_to_end(key)
+                return False
+            self._keys[key] = None
+            if len(self._keys) > self._size:
+                self._keys.popitem(last=False)
+            return True
+
+    def forget(self, key: tuple[str, ...]) -> None:
+        with self._lock:
+            self._keys.pop(key, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._keys.clear()
+
+
+charged = _Charged()
+
+
+def speech_stream(token: str | None, session_id: str, message_id: str, part: int | None = None) -> SpeechStream:
     """Like speech(), but the audio streams as it is generated (read-aloud starts within seconds).
     A reply already spoken in full is replayed from the cache, free of charge and allowance."""
     reply, voice, s, r = _authorized_reply(token, session_id, message_id)
-    return _cached_stream(("learning", str(s["learning_session_id"]), message_id), reply, voice, s["workspace_id"], r.session)
+    return _cached_stream(("learning", str(s["learning_session_id"]), message_id), reply, voice, s["workspace_id"], r.session, part)
 
 
-def _cached_stream(scope: tuple[str, ...], reply: str, voice: Any, workspace_id: Any, session: dict[str, Any]) -> SpeechStream:
+def _cached_stream(scope: tuple[str, ...], reply: str, voice: Any, workspace_id: Any, session: dict[str, Any], part: int | None = None) -> SpeechStream:
+    """The whole reply (`part` None), or one of its speech_parts() with the part count attached."""
     settings = get_settings()
-    key = (*scope, settings.voice_tts_model, settings.voice_tts_voice)
+    reply_key = (*scope, settings.voice_tts_model, settings.voice_tts_voice)
+    if part is None:
+        return _spoken(reply_key, reply, voice, lambda: _charge_speech(workspace_id, session))
+    parts = speech_parts(reply)
+    if part >= len(parts):
+        raise ApiError("MALFORMED_INPUT", "That reply has no such part.")
+
+    def charge_once() -> None:
+        # One read-aloud allowance per reply, whichever of its parts is generated first.
+        if charged.first(reply_key):
+            try:
+                _charge_speech(workspace_id, session)
+            except ApiError:
+                charged.forget(reply_key)  # over the limit: nothing was read, so nothing is remembered
+                raise
+
+    stream = _spoken((*reply_key, "part", str(len(parts)), str(part)), parts[part], voice, charge_once)
+    return replace(stream, parts=len(parts))
+
+
+def _spoken(key: tuple[str, ...], text_: str, voice: Any, charge: Any) -> SpeechStream:
     hit = audio_cache.get(key)
     if hit:
         rate, audio = hit
         return SpeechStream(rate, (audio[i : i + CHUNK] for i in range(0, len(audio), CHUNK)))
-    _charge_speech(workspace_id, session)
+    charge()
     try:
-        stream = voice.speak_stream(reply)
+        stream = voice.speak_stream(text_)
     except VoiceUnavailable as e:
         raise _unavailable(e) from None
 
@@ -203,9 +304,9 @@ def _authorized_work_reply(token: str | None, work_session_id: str, message_id: 
     return reply, voice, s, r
 
 
-def work_speech_stream(token: str | None, work_session_id: str, message_id: str) -> SpeechStream:
+def work_speech_stream(token: str | None, work_session_id: str, message_id: str, part: int | None = None) -> SpeechStream:
     reply, voice, s, r = _authorized_work_reply(token, work_session_id, message_id)
-    return _cached_stream(("work", str(s["work_session_id"]), message_id), reply, voice, s["workspace_id"], r.session)
+    return _cached_stream(("work", str(s["work_session_id"]), message_id), reply, voice, s["workspace_id"], r.session, part)
 
 
 def work_speech(token: str | None, work_session_id: str, message_id: str) -> bytes:
@@ -249,7 +350,7 @@ def handover_listen_grant(token: str | None, mode: Mode) -> dict[str, Any]:
     return _grant(c.ws, c.session, mode)
 
 
-def handover_speech_stream(token: str | None, message_id: str) -> SpeechStream:
+def handover_speech_stream(token: str | None, message_id: str, part: int | None = None) -> SpeechStream:
     from app.services import handover
 
     mid = _message_id(message_id)
@@ -260,7 +361,7 @@ def handover_speech_stream(token: str | None, message_id: str) -> SpeechStream:
                                  WHERE organization_id=:o AND workspace_id=:w AND message_id=:m AND employee_id=:e AND sender='AI'"""),
                          {"o": c.org, "w": c.ws, "m": mid, "e": c.me}).mappings().first()
     reply = _shown(m["content"], m["unknowns"]) if m else None
-    return _cached_stream(("handover", str(c.me), message_id), reply, _speakable(reply), c.ws, c.session)
+    return _cached_stream(("handover", str(c.me), message_id), reply, _speakable(reply), c.ws, c.session, part)
 
 
 def kt_listen_grant(token: str | None, mode: Mode) -> dict[str, Any]:
@@ -274,7 +375,7 @@ def kt_listen_grant(token: str | None, mode: Mode) -> dict[str, Any]:
     return _grant(c.ws, c.session, mode)
 
 
-def kt_speech_stream(token: str | None, message_id: str) -> SpeechStream:
+def kt_speech_stream(token: str | None, message_id: str, part: int | None = None) -> SpeechStream:
     """A copilot answer in this person's own case conversation, or a question in their own interview."""
     from app.services import exit_kt
 
@@ -291,4 +392,4 @@ def kt_speech_stream(token: str | None, message_id: str) -> SpeechStream:
             reply = conn.execute(text("""SELECT x.content FROM workweave.exit_kt_interview_messages x
                                          JOIN workweave.exit_kt_interviews i ON i.organization_id=x.organization_id AND i.workspace_id=x.workspace_id AND i.interview_id=x.interview_id
                                          WHERE x.organization_id=:o AND x.workspace_id=:w AND x.message_id=:m AND x.sender_type='AI' AND i.employee_id=:e"""), p).scalar()
-    return _cached_stream(("exit-kt", str(c.me), message_id), reply, _speakable(reply), c.ws, c.session)
+    return _cached_stream(("exit-kt", str(c.me), message_id), reply, _speakable(reply), c.ws, c.session, part)

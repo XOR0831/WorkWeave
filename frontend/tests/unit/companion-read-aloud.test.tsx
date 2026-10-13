@@ -65,7 +65,7 @@ async function renderPage(transcript: unknown[], opts: { readAloud?: boolean; ac
     if (u.endsWith("/work-sessions")) return json(view(transcript));
     if (u.endsWith("/work-state")) return json(DASH);
     if (u.endsWith("/assignments") || u.endsWith("/work-events")) return json([]);
-    if (u.includes("/voice/speech/") && u.endsWith("/stream")) return pcm();
+    if (u.includes("/voice/speech/") && u.split("?")[0]!.endsWith("/stream")) return pcm(); // read in parts: ?part=0 first
     return json(null);
   });
   vi.stubGlobal("fetch", fetch);
@@ -94,7 +94,7 @@ afterEach(() => {
 describe("Work Companion read-aloud (API mode)", () => {
   it("reads a new session's opening brief once, and not again on reload", async () => {
     const fetch = await renderPage([BRIEF]);
-    await waitFor(() => expect(speechCalls(fetch)).toEqual(["/api/work-sessions/ws1/voice/speech/b1/stream"]));
+    await waitFor(() => expect(speechCalls(fetch)).toEqual(["/api/work-sessions/ws1/voice/speech/b1/stream?part=0"]));
     await waitFor(() => expect(heard.length).toBe(1));
     cleanup();
     const again = await renderPage([BRIEF]);
@@ -107,7 +107,7 @@ describe("Work Companion read-aloud (API mode)", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(speechCalls(fetch)).toEqual([]);
     fireEvent.click(screen.getAllByRole("button", { name: "Listen to this reply" })[1]!);
-    await waitFor(() => expect(speechCalls(fetch)).toEqual(["/api/work-sessions/ws1/voice/speech/r1/stream"]));
+    await waitFor(() => expect(speechCalls(fetch)).toEqual(["/api/work-sessions/ws1/voice/speech/r1/stream?part=0"]));
   });
 
   it("waits for a tap when the browser hasn't allowed sound yet", async () => {
@@ -115,7 +115,7 @@ describe("Work Companion read-aloud (API mode)", () => {
     const hear = await screen.findByRole("button", { name: "Hear the brief" });
     expect(speechCalls(fetch)).toEqual([]); // nothing spent on audio that couldn't play
     fireEvent.click(hear);
-    await waitFor(() => expect(speechCalls(fetch)).toEqual(["/api/work-sessions/ws1/voice/speech/b1/stream"]));
+    await waitFor(() => expect(speechCalls(fetch)).toEqual(["/api/work-sessions/ws1/voice/speech/b1/stream?part=0"]));
   });
 
   it("stays quiet when read-aloud is off", async () => {

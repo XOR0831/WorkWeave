@@ -10,7 +10,7 @@ import json
 from datetime import date
 from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -202,15 +202,14 @@ def voice_speech(session_id: str, message_id: str, request: Request) -> Response
     return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "private, no-store"})
 
 
+# ?part=N reads one part of the reply (voice.speech_parts); X-Speech-Parts says how many there are.
+SpeechPart = Query(default=None, ge=0, le=500)
+
+
 @router.get("/onboarding/sessions/{session_id}/voice/speech/{message_id}/stream")
-def voice_speech_stream(session_id: str, message_id: str, request: Request) -> StreamingResponse:
+def voice_speech_stream(session_id: str, message_id: str, request: Request, part: int | None = SpeechPart) -> StreamingResponse:
     """Raw 16-bit mono PCM (rate in X-Sample-Rate) streamed as Gemini generates it."""
-    stream = voice.speech_stream(token(request), session_id, message_id)
-    return StreamingResponse(
-        stream.chunks,
-        media_type=f"audio/L16;rate={stream.rate};channels=1",
-        headers={"Cache-Control": "private, no-store, no-transform", "X-Accel-Buffering": "no", "X-Sample-Rate": str(stream.rate)},
-    )
+    return _pcm(voice.speech_stream(token(request), session_id, message_id, part))
 
 
 # ---------------------------------------------------------------- Work Companion (reads + shell + voice)
@@ -324,14 +323,9 @@ def work_voice_speech(work_session_id: str, message_id: str, request: Request) -
 
 
 @router.get("/work-sessions/{work_session_id}/voice/speech/{message_id}/stream")
-def work_voice_speech_stream(work_session_id: str, message_id: str, request: Request) -> StreamingResponse:
+def work_voice_speech_stream(work_session_id: str, message_id: str, request: Request, part: int | None = SpeechPart) -> StreamingResponse:
     """A companion reply read aloud: raw 16-bit mono PCM (rate in X-Sample-Rate), streamed."""
-    stream = voice.work_speech_stream(token(request), work_session_id, message_id)
-    return StreamingResponse(
-        stream.chunks,
-        media_type=f"audio/L16;rate={stream.rate};channels=1",
-        headers={"Cache-Control": "private, no-store, no-transform", "X-Accel-Buffering": "no", "X-Sample-Rate": str(stream.rate)},
-    )
+    return _pcm(voice.work_speech_stream(token(request), work_session_id, message_id, part))
 
 
 @router.post("/work-sessions/{work_session_id}/messages/stream", dependencies=[Depends(require_client_header)])
@@ -504,11 +498,10 @@ def handover_copilot(handover_id: str, body: CopilotBody, request: Request) -> d
 
 
 def _pcm(stream: Any) -> StreamingResponse:
-    return StreamingResponse(
-        stream.chunks,
-        media_type=f"audio/L16;rate={stream.rate};channels=1",
-        headers={"Cache-Control": "private, no-store, no-transform", "X-Accel-Buffering": "no", "X-Sample-Rate": str(stream.rate)},
-    )
+    headers = {"Cache-Control": "private, no-store, no-transform", "X-Accel-Buffering": "no", "X-Sample-Rate": str(stream.rate)}
+    if stream.parts is not None:
+        headers["X-Speech-Parts"] = str(stream.parts)
+    return StreamingResponse(stream.chunks, media_type=f"audio/L16;rate={stream.rate};channels=1", headers=headers)
 
 
 @router.post("/handover/voice/listen", dependencies=[Depends(require_client_header)])
@@ -518,9 +511,9 @@ def handover_voice_listen(body: ListenBody, request: Request) -> dict[str, Any]:
 
 
 @router.get("/handover/voice/speech/{message_id}/stream")
-def handover_voice_speech(message_id: str, request: Request) -> StreamingResponse:
+def handover_voice_speech(message_id: str, request: Request, part: int | None = SpeechPart) -> StreamingResponse:
     """A copilot answer from this lead's own conversation, read aloud (raw PCM, rate in X-Sample-Rate)."""
-    return _pcm(voice.handover_speech_stream(token(request), message_id))
+    return _pcm(voice.handover_speech_stream(token(request), message_id, part))
 
 
 @router.post("/exit-kt/voice/listen", dependencies=[Depends(require_client_header)])
@@ -530,9 +523,9 @@ def kt_voice_listen(body: ListenBody, request: Request) -> dict[str, Any]:
 
 
 @router.get("/exit-kt/voice/speech/{message_id}/stream")
-def kt_voice_speech(message_id: str, request: Request) -> StreamingResponse:
+def kt_voice_speech(message_id: str, request: Request, part: int | None = SpeechPart) -> StreamingResponse:
     """A copilot answer or interview question from this person's own conversation, read aloud."""
-    return _pcm(voice.kt_speech_stream(token(request), message_id))
+    return _pcm(voice.kt_speech_stream(token(request), message_id, part))
 
 
 @router.post("/handovers/{handover_id}/gap-check", dependencies=[Depends(require_client_header)])

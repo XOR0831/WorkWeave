@@ -363,7 +363,7 @@ def test_stream_endpoint_reads_only_committed_tutor_replies(client, other_client
 
 
 # ---------------------------------------------------------------- replaying a reply (audio cache)
-def _reply(client, engine, tutor):
+def _reply(client, engine, tutor, text=None):
     s = learner_session(client)
     sid = s["learning_session_id"]
     from sqlalchemy import text as sql
@@ -372,7 +372,8 @@ def _reply(client, engine, tutor):
         ver, sec = c.execute(sql("""SELECT ks.document_version_id, ks.section_id FROM workweave.knowledge_sections ks
                                    JOIN workweave.learning_sessions ls ON ls.workspace_id = ks.workspace_id
                                    WHERE ls.learning_session_id=:s AND ks.section_key='h2:1/h3:1'"""), {"s": sid}).one()
-    tutor.then(ok(teaching([cite(ver, sec)])))
+    extra = {"reply": {"kind": "TEACHING", "text": text, "strategy": "CONCISE", "citations": [cite(ver, sec)]}} if text else {}
+    tutor.then(ok(teaching([cite(ver, sec)], **extra)))
     v = client.post(f"/api/onboarding/sessions/{sid}/turns", json={"client_turn_id": str(uuid.uuid4()), "expected_revision": s["revision"], "text": "Hi", "input_kind": "TEXT"}).json()["data"]
     return f"/api/onboarding/sessions/{sid}/voice/speech/{v['transcript'][-1]['message_id']}/stream", s
 
@@ -442,3 +443,58 @@ def test_the_audio_cache_drops_the_oldest_replies_when_full():
     assert c.get(("s", "b")) is None and c.get(("s", "a")) and c.get(("s", "c"))
     c.put(("s", "huge"), 24000, b"x" * 11)  # larger than the whole cache: never stored
     assert c.get(("s", "huge")) is None
+
+
+# ---------------------------------------------------------------- reading a reply sentence by sentence
+LONG_REPLY = (
+    "Good question! Start with what you saw yourself on the floor today. "
+    "Then add what someone else told you, and say who it came from. "
+    "Keep anything you're assuming separate, and mark it as an assumption so the next shift can check it. "
+    "Finally, list what you don't know yet."
+)
+
+
+def test_speech_parts_keep_every_sentence_in_order_and_start_short():
+    from app.services.voice import FIRST_PART_MAX, PART_MAX, speech_parts
+
+    parts = speech_parts(LONG_REPLY)
+    assert len(parts) >= 2 and len(parts[0]) <= FIRST_PART_MAX and all(len(p) <= PART_MAX for p in parts)
+    assert " ".join(parts) == LONG_REPLY
+    assert speech_parts('He said "Stop now." Then he left.') == ['He said "Stop now." Then he left.']  # the quote stays
+    assert speech_parts("Use e.g. SOP-001 v3.4 here.") == ["Use e.g. SOP-001 v3.4 here."]  # no split inside
+    lines = speech_parts("Two things.\n- Ticket #829.\n- Ticket #910.")
+    assert "\n".join(lines).replace("\n", " ").split() == "Two things. - Ticket #829. - Ticket #910.".split()
+    assert all(" - " not in p for p in lines)  # lines are joined with a line break (a pause), never run together
+
+
+def test_a_reply_read_in_parts_costs_one_allowance_and_each_part_replays_free(client, engine, fake_voice, tutor):
+    from sqlalchemy import text as sql
+
+    from app.services.voice import audio_cache, charged, speech_parts
+
+    audio_cache.clear()
+    charged.clear()
+    with engine.begin() as c:
+        c.execute(sql("DELETE FROM workweave.demo_usage"))
+        c.execute(sql("UPDATE workweave.demo_usage_limits SET daily_limit=10 WHERE tier='PUBLIC' AND scope_type='POOL' AND usage_kind='VOICE_SPEECH'"))
+    try:
+        url, _ = _reply(client, engine, tutor, LONG_REPLY)
+        expected = speech_parts(LONG_REPLY)
+        first = client.get(url, params={"part": 0})
+        assert first.status_code == 200 and first.headers["x-speech-parts"] == str(len(expected)) and first.headers["x-sample-rate"] == "24000"
+        for n in range(1, len(expected)):
+            assert client.get(url, params={"part": n}).headers["x-speech-parts"] == str(len(expected))
+        assert fake_voice.spoken == expected  # one Gemini call per part, each part's own text
+        assert client.get(url, params={"part": 0}).content == first.content and len(fake_voice.spoken) == len(expected)  # replayed from the cache
+        assert client.get(url, params={"part": len(expected)}).status_code == 422  # no such part
+        assert client.get(url, params={"part": -1}).status_code == 422
+        assert "x-speech-parts" not in client.get(url).headers  # without ?part: the whole reply, as before
+        with engine.connect() as c:
+            used = c.execute(sql("SELECT used FROM workweave.demo_usage WHERE scope_type='PUBLIC_POOL' AND usage_kind='VOICE_SPEECH'")).scalar_one()
+        assert used == 2  # the reply read in parts once, plus the separate whole-reply request
+    finally:
+        audio_cache.clear()
+        charged.clear()
+        with engine.begin() as c:
+            c.execute(sql("DELETE FROM workweave.demo_usage"))
+            c.execute(sql("UPDATE workweave.demo_usage_limits SET daily_limit=0"))

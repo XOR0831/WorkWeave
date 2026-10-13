@@ -101,4 +101,25 @@ describe("streamed reply playback", () => {
     expect(out.sources).toHaveLength(0);
     expect(done).toEqual(["done"]);
   });
+
+  it("a reply read in parts stays playing in the gap before a late part, so hands-free doesn't listen in between", async () => {
+    const out = new FakeOut();
+    const player = new StreamPlayer(() => out as unknown as AudioOut);
+    const events: string[] = [];
+    let send!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start: (c) => void (send = c) });
+    const played = player.play({ rate: 1000, body }, { start: () => events.push("start"), done: () => events.push("done") }, 1);
+    send.enqueue(new Uint8Array([0, 64, 0, 64])); // part 1 arrives whole: one piece of audio
+    await new Promise((r) => setTimeout(r, 0));
+    expect(out.sources).toHaveLength(1);
+    out.sources[0]!.onended!(); // part 1 finished playing; part 2 is still on its way
+    expect(events).toEqual(["start"]); // not done: the reply is still being read
+    send.enqueue(new Uint8Array([0, 64]));
+    send.close();
+    await played;
+    expect(out.sources).toHaveLength(2);
+    expect(events).toEqual(["start"]);
+    out.sources[1]!.onended!();
+    expect(events).toEqual(["start", "done"]); // done only after the last part
+  });
 });

@@ -747,10 +747,54 @@ class HttpCore {
   async streamKtReplySpeech(message_id: string): Promise<PcmStream> {
     return this.pcm(`${BASE}/exit-kt/voice/speech/${encodeURIComponent(message_id)}/stream`);
   }
+  /**
+   * A reply read aloud sentence by sentence (?part=N; the first response says how many parts in
+   * X-Speech-Parts). Firebase Hosting delivers a response only once it is complete, so asking for
+   * the whole reply would play nothing until all of it was generated. Each part arrives whole and is
+   * handed to the player as one piece, which also avoids the clicks Chrome makes where many small
+   * pieces join. The next part is fetched while the current one plays; the stream ends only after
+   * the last part, so the reply counts as playing (and hands-free stays paused) between parts.
+   * A server without parts sends the whole reply as before.
+   */
   private async pcm(url: string): Promise<PcmStream> {
+    const first = await this.pcmPart(`${url}?part=0`);
+    const rate = Number(first.headers.get("x-sample-rate")) || 24000;
+    const total = Number(first.headers.get("x-speech-parts"));
+    if (!(total >= 1)) return { rate, body: first.body! };
+    let next = 0;
+    let pending: Response | null = first;
+    let abort: AbortController | null = null;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull: async (c) => {
+          try {
+            if (!pending) {
+              abort = new AbortController();
+              pending = await this.pcmPart(`${url}?part=${next}`, abort.signal);
+            }
+            const part = new Uint8Array(await pending.arrayBuffer());
+            pending = null;
+            next += 1;
+            if (part.length) c.enqueue(part);
+            if (next >= total) c.close();
+          } catch (e) {
+            c.error(e); // the player stops; the reply stays on screen
+          }
+        },
+        cancel: () => {
+          abort?.abort();
+          void pending?.body?.cancel().catch(() => undefined);
+          pending = null;
+        },
+      },
+      { highWaterMark: 1 }, // one part ahead: fetched while the one before it plays
+    );
+    return { rate, body };
+  }
+  private async pcmPart(url: string, signal?: AbortSignal): Promise<Response> {
     let res: Response;
     try {
-      res = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+      res = await fetch(url, { credentials: "same-origin", cache: "no-store", signal });
     } catch {
       throw new WorkWeaveError({ code: "DEPENDENCY_UNAVAILABLE", message: FAILED, retryable: true }, "network");
     }
@@ -758,7 +802,7 @@ class HttpCore {
       const json = (await res.json().catch(() => null)) as { request_id?: string; error?: ApiError } | null;
       throw new WorkWeaveError(json?.error ?? { code: "DEPENDENCY_UNAVAILABLE", message: plainStatus(res.status), retryable: res.status >= 500 }, json?.request_id ?? "unknown");
     }
-    return { rate: Number(res.headers.get("x-sample-rate")) || 24000, body: res.body };
+    return res;
   }
   async getReplySpeech(message_id: string): Promise<Blob> {
     const id = await this.openSessionId();

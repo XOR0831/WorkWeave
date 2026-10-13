@@ -102,7 +102,7 @@ async function renderPage(onTurn?: () => Promise<Response>) {
     if (u.endsWith("/capabilities")) return json({ voice_adapter: "AVAILABLE", conversation_engine: "AVAILABLE" });
     if (u.endsWith("/onboarding")) return json(OVERVIEW);
     if (u.endsWith("/onboarding/sessions/ls")) return json(VIEW);
-    if (u.includes("/voice/speech/") && u.endsWith("/stream")) return pcmResponse();
+    if (u.includes("/voice/speech/") && u.split("?")[0]!.endsWith("/stream")) return pcmResponse(); // read in parts: ?part=0 first
     if (u.includes("/voice/speech/")) return new Response(new TextEncoder().encode("RIFF"), { status: 200, headers: { "content-type": "audio/wav" } });
     if (u.endsWith("/turns/stream") && onTurn) return onTurn();
     return json(null);
@@ -185,7 +185,7 @@ describe("onboarding session voice and flow polish (API mode)", () => {
     expect(screen.getByRole("combobox", { name: "Speed" })).toHaveValue("1.25");
     await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Listen to this reply" })));
     // Streamed read-aloud: sound starts with the first chunk, at the remembered speed.
-    expect(fetch.mock.calls.some(([u]) => String(u).endsWith("/onboarding/sessions/ls/voice/speech/turn1%3Aout/stream"))).toBe(true);
+    expect(fetch.mock.calls.some(([u]) => String(u).endsWith("/onboarding/sessions/ls/voice/speech/turn1%3Aout/stream?part=0"))).toBe(true);
     await waitFor(() => expect(played).toEqual([{ src: "stream", rate: 1.25 }]));
     expect(screen.getByRole("button", { name: "Stop reading this reply" })).toBeInTheDocument();
   });

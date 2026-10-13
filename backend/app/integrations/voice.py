@@ -81,6 +81,7 @@ class SpeechStream:
     rate: int
     chunks: Iterator[bytes]
     truncated: bool = False  # set when the stream ended early after some audio (never cache it)
+    parts: int | None = None  # read sentence by sentence: how many parts the reply has (this is one)
 
 
 log = logging.getLogger(__name__)
