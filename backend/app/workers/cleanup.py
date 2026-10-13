@@ -101,6 +101,41 @@ def scoped_tables(conn: Connection) -> list[str]:
     return [r[0] for r in rows]
 
 
+def delete_order(conn: Connection, tables: Sequence[str]) -> list[str]:
+    """The scoped tables with each child before any parent it references through a foreign key
+    that can't be deferred, so the purge never depends on every key being deferrable (a table
+    added later with an ordinary key once made every purge fail). Ties keep name order."""
+    scoped = set(tables)
+    edges = conn.execute(
+        text(
+            """SELECT DISTINCT ch.relname AS child, pa.relname AS parent
+               FROM pg_constraint k
+               JOIN pg_class ch ON ch.oid = k.conrelid
+               JOIN pg_class pa ON pa.oid = k.confrelid
+               WHERE k.contype = 'f' AND NOT k.condeferrable AND k.conrelid <> k.confrelid
+                 AND k.connamespace = 'workweave'::regnamespace"""
+        )
+    )
+    parents_of: dict[str, set[str]] = {t: set() for t in scoped}
+    for child, parent in edges:
+        if child in scoped and parent in scoped:
+            parents_of[child].add(parent)
+    # A table may go once every table that references it has gone.
+    children_left = {t: sum(t in ps for ps in parents_of.values()) for t in scoped}
+    order: list[str] = []
+    ready = sorted(t for t, n in children_left.items() if n == 0)
+    while ready:
+        t = ready.pop(0)
+        order.append(t)
+        for parent in parents_of[t]:
+            children_left[parent] -= 1
+            if children_left[parent] == 0:
+                ready.append(parent)
+        ready.sort()
+    # A cycle of immediate keys can't be ordered; leave those last and let the purge report it.
+    return order + sorted(scoped - set(order))
+
+
 def usage_table_exists(engine: Engine) -> bool:
     """Migration 0005 may not be applied yet on an older database."""
     with engine.connect() as conn:
@@ -176,11 +211,11 @@ def purge_one(engine: Engine, cand: Candidate, grace_minutes: int) -> dict[str, 
         conn.execute(text("SELECT set_config('workweave.retention_purge', 'demo-visitor', true)"))
         conn.execute(text("SELECT set_config('workweave.retention_purge_workspace', :w, true)"), {"w": str(cand.workspace_id)})
         scope = {"o": cand.organization_id, "w": cand.workspace_id}
-        # Sessions first (their FKs to employees aren't deferrable), then every scoped table, then the
+        # Sessions first (their FKs to employees aren't deferrable), then every scoped table (children before parents), then the
         # workspace, then its proof row: with 0004, PostgreSQL checks the proof on each of these deletes.
         conn.execute(text(f"DELETE FROM {W}.demo_visitor_sessions WHERE organization_id=:o AND workspace_id=:w"), scope)
         conn.execute(text(f"UPDATE {W}.knowledge_documents SET current_version_id = NULL WHERE organization_id=:o AND workspace_id=:w AND current_version_id IS NOT NULL"), scope)
-        for t in tables:
+        for t in delete_order(conn, tables):
             if t not in ("demo_visitor_sessions", "demo_visitor_runs"):
                 conn.execute(text(f"DELETE FROM {W}.{t} WHERE organization_id=:o AND workspace_id=:w"), scope)
         conn.execute(text(f"DELETE FROM {W}.workspaces WHERE organization_id=:o AND workspace_id=:w"), scope)

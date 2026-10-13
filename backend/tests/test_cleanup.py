@@ -243,3 +243,42 @@ def test_a_sessionless_demo_workspace_is_never_an_automatic_candidate(engine):
     assert rows_in(engine, ws) == before
     with engine.connect() as c:
         assert c.execute(text("SELECT count(*) FROM workweave.workspaces WHERE workspace_id=:w"), {"w": ws}).scalar_one() == 1
+
+
+def add_copilot_messages(engine, ws: str) -> None:
+    """Shift Handover and Exit KT chat rows in the run, as a visitor using those copilots leaves them."""
+    with engine.begin() as c:
+        h = c.execute(text("SELECT organization_id, handover_id FROM workweave.shift_handovers WHERE workspace_id=:w LIMIT 1"), {"w": ws}).one()
+        k = c.execute(text("SELECT exit_kt_case_id FROM workweave.exit_kt_cases WHERE workspace_id=:w LIMIT 1"), {"w": ws}).scalar_one()
+        e = c.execute(text("SELECT employee_id FROM workweave.employees WHERE workspace_id=:w LIMIT 1"), {"w": ws}).scalar_one()
+        p = {"o": h.organization_id, "w": ws, "h": h.handover_id, "k": k, "e": e}
+        c.execute(text("INSERT INTO workweave.handover_copilot_messages (organization_id, workspace_id, handover_id, employee_id, sender, content) VALUES (:o, :w, :h, :e, 'LEAD', 'What is missing?')"), p)
+        c.execute(text("INSERT INTO workweave.exit_kt_copilot_messages (organization_id, workspace_id, exit_kt_case_id, employee_id, sender, content) VALUES (:o, :w, :k, :e, 'PERSON', 'What is most at risk?')"), p)
+
+
+def test_a_run_with_handover_and_exit_kt_chat_purges_completely(client, engine):
+    """The cloud cleanup once failed on every run: these tables' keys to employees weren't deferrable."""
+    ws = run_with_history(client)
+    add_copilot_messages(engine, ws)
+    revoke(engine, ws)
+    purged = cleanup.purge_one(engine, candidate(engine, ws), 0)
+    assert purged and purged["handover_copilot_messages"] == 1 and purged["exit_kt_copilot_messages"] == 1
+    assert rows_in(engine, ws) == 0
+
+
+def test_delete_order_puts_children_before_parents_they_reference_immediately():
+    """Without 0018 the copilot keys are immediate; the purge order alone must still work."""
+    name = f"workweave_scratch_{uuid.uuid4().hex[:8]}"
+    url = prepare_db.build(name, revision="0017", catalog=False)
+    eng = create_engine(url)
+    try:
+        with eng.connect() as c:
+            order = cleanup.delete_order(c, cleanup.scoped_tables(c))
+        assert sorted(order) == sorted(set(order))
+        for child, parent in [("handover_copilot_messages", "employees"), ("handover_copilot_messages", "shift_handovers"),
+                              ("exit_kt_copilot_messages", "exit_kt_cases"), ("knowledge_ingestion_jobs", "curricula"),
+                              ("work_session_messages", "work_sessions")]:
+            assert order.index(child) < order.index(parent), (child, parent)
+    finally:
+        eng.dispose()
+        prepare_db.drop(name)

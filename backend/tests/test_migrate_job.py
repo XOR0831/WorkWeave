@@ -25,7 +25,7 @@ def test_fresh_database_gets_baseline_head_and_ready_catalog_and_reruns_are_noop
     assert migrate.run(empty_db, activate=True, log=logs.append) == "fresh"
     eng = create_engine(empty_db)
     with eng.connect() as c:
-        assert c.execute(text("SELECT version_num FROM workweave.alembic_version")).scalar_one() == "0017"
+        assert c.execute(text("SELECT version_num FROM workweave.alembic_version")).scalar_one() == "0018"
         assert {r[0]: r[1] for r in c.execute(text("SELECT company_key, status FROM workweave.scenario_catalog"))} == {"northstar": "READY", "acme": "READY", "harbor": "READY"}
         assert c.execute(text("SELECT count(*) FROM workweave.knowledge_chunks WHERE embedding IS NOT NULL")).scalar_one() == 17
         before = c.execute(text("SELECT count(*) FROM workweave.employees")).scalar_one()
