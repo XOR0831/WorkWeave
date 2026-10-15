@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     ingestion_timeout_seconds: int = 600
     # Container image only: pass the deployment's Gemini settings to her ingestion (no .env of hers there).
     ingestion_pass_gemini_env: bool = False
+    # Promoted Exit KT knowledge (ADR-053): indexed from the API process by the backend's own small
+    # indexer, with the same embedding model and size as her ingestion (through INGESTION_PYTHON).
+    kt_index_in_process: bool = True
+    kt_index_interval_seconds: float = Field(default=5.0, ge=0.5, le=300)
     # Notification inbox (blueprint/19, ADR-048): the dispatcher projects outbox events into a recipient-scoped
     # Firestore inbox. Locally that's the emulator in local/compose.yaml (FIRESTORE_EMULATOR_HOST); in the cloud
     # the service's own credentials. NOTIFICATIONS=none turns the inbox off (it then says it isn't connected).

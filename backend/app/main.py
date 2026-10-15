@@ -19,11 +19,14 @@ log = logging.getLogger("workweave")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Local development delivers notifications from this process (DISPATCHER_IN_PROCESS); see ADR-048.
-    from app.services import notifications
+    # Promoted Exit KT knowledge is indexed from this process too (KT_INDEX_IN_PROCESS, ADR-053).
+    from app.services import kt_index, notifications
 
     notifications.start_worker()
+    kt_index.start_worker()
     yield
     notifications.stop_worker()
+    kt_index.stop_worker()
 
 
 def create_app() -> FastAPI:

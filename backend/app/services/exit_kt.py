@@ -13,9 +13,10 @@ Who (per case):
 
 Separate actions (CLAUDE.md): package receipt, knowledge approval, promotion, ownership transfer and
 closing a knowledge gap never imply each other.
-- Promotion makes an approved artifact revision a new organizational document version, marked
-  "waiting for indexing" (the AI engineer's ingestion indexes it later; until then it isn't in AI
-  retrieval). Existing SOP versions are never overwritten.
+- Promotion makes an approved artifact revision a new organizational document version, with its own
+  source record, marked PENDING for the index; the backend's KT indexer (kt_index.py, ADR-053) then
+  embeds it, and only when READY is it in AI retrieval. A reviewer can retry a FAILED index. Existing
+  SOP versions are never overwritten.
 - A permanent transfer needs an approved package, the successor's receipt of that exact version,
   the effective time reached (or reviewed), and an unchanged ownership revision.
 
@@ -34,6 +35,7 @@ from sqlalchemy import Connection
 
 from app.errors import ApiError
 from app.repositories import commands, exit_kt as repo, work
+from app.services import kt_index
 from app.services.onboarding import _persona
 from app.services.work_commands import _check_revision, _command, _id
 
@@ -506,7 +508,8 @@ def promote_artifact(conn, token, artifact_id: str, revision_id: str, key: str, 
         now = datetime.now(UTC)
         n = len([d for d in repo._all(conn, f"SELECT 1 FROM {repo.W}.knowledge_documents WHERE organization_id=:o AND workspace_id=:w AND document_type='KT_ARTIFACT'", {"o": c.org, "w": c.ws})]) + 1
         doc = repo.insert(conn, "knowledge_documents", c.org, c.ws, document_code=f"KT-{n:03d}", title=a["title"], document_type="KT_ARTIFACT")
-        dv = repo.insert(conn, "knowledge_document_versions", c.org, c.ws, document_id=doc["document_id"], version="1", content=cur["content"], approval_status="APPROVED",
+        source = kt_index.create_source(conn, c.org, c.ws, c.case["employee_id"], cur["audience"], cur["artifact_revision_id"])
+        dv = repo.insert(conn, "knowledge_document_versions", c.org, c.ws, document_id=doc["document_id"], version="1", content=cur["content"], source_id=source, approval_status="APPROVED",
                          temporal_status="CURRENT", effective_at=now, approved_by_employee_id=c.me, approved_at=now)
         repo.update(conn, "knowledge_documents", doc, current_version_id=dv["document_version_id"])
         repo.insert(conn, "knowledge_promotions", c.org, c.ws, artifact_revision_id=cur["artifact_revision_id"], document_version_id=dv["document_version_id"], approved_by=c.me, promoted_at=now, index_status="PENDING")
@@ -514,6 +517,24 @@ def promote_artifact(conn, token, artifact_id: str, revision_id: str, key: str, 
         return "knowledge_promotion.created", "knowledge_document_version", dv["document_version_id"]
 
     return _run(conn, token, "exit_kt.promote", key, {"artifact_id": artifact_id, "revision_id": revision_id}, expected_revision, request_id, body)
+
+
+def retry_indexing(conn, token, artifact_id: str, revision_id: str, key: str, expected_revision, request_id):
+    """A FAILED index of promoted knowledge is tried again (ADR-053). It never re-approves or promotes again."""
+
+    def body(c: Ctx):
+        c.reviewer("Only an authorized knowledge reviewer can retry indexing.")
+        a = _artifact(c, artifact_id)
+        cur = _current_revision(c, a, revision_id)
+        promo = next(iter(repo.promotions(conn, c.org, c.ws, [cur["artifact_revision_id"]])), None)
+        if not promo:
+            raise ApiError("GUARD_FAILED", "This revision hasn't been promoted.")
+        if promo["index_status"] != "FAILED":
+            raise ApiError("GUARD_FAILED", "Only a failed index can be retried.")
+        repo.update(conn, "knowledge_promotions", promo, index_status="PENDING", index_attempts=0, index_error=None, index_locked_at=None, index_next_attempt_at=datetime.now(UTC))
+        return "knowledge_promotion.index_retried", "knowledge_promotion", promo["promotion_id"]
+
+    return _run(conn, token, "exit_kt.retry_indexing", key, {"artifact_id": artifact_id, "revision_id": revision_id}, expected_revision, request_id, body)
 
 
 def _transfer(c: Ctx, transfer_id: str) -> dict[str, Any]:

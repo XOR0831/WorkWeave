@@ -5,7 +5,7 @@ import { useOnChange } from "@/lib/preview/use-on-change";
 import { ChatErrorNote, ScriptPrompts, Transcript } from "@/components/chat";
 import { ChatVoiceComposer, KT_VOICE, ListenButton, ReadAloudControls, useChatVoice } from "@/features/voice/ChatVoice";
 import { Dialog, ErrorNotice, OriginTag, Status, humanize } from "@/components/ui";
-import { newKey, useCommand, useSession } from "@/lib/preview/client-context";
+import { newKey, useCommand, useRuntime, useSession } from "@/lib/preview/client-context";
 import type { ExitKtCase, KtArtifact, KtKnowledgeItem } from "@/types/contracts";
 import { DiscoveryPanel, riskWhy } from "./Discovery";
 
@@ -251,6 +251,7 @@ function NewArtifactDialog({ c, item, onClose }: { c: ExitKtCase; item: KtKnowle
 function ArtifactDialog({ c, role, artifact, onClose }: { c: ExitKtCase; role: "SUBJECT" | "REVIEWER"; artifact: KtArtifact | null; onClose: () => void }) {
   const cmd = useCommand();
   const { nameOf, session } = useSession();
+  const api = useRuntime().mode === "http";
   const cur = artifact?.revisions.find((r) => r.artifact_revision_id === artifact.current_revision_id);
   const [text, setText] = useState(cur?.content ?? "");
   const [audience, setAudience] = useState<"TEAM" | "ORGANIZATION">("TEAM");
@@ -337,10 +338,21 @@ function ArtifactDialog({ c, role, artifact, onClose }: { c: ExitKtCase; role: "
         <section className="stack-s">
           <h3>Organizational knowledge</h3>
           {artifact.promotion ? (
-            <div className="notice notice-ok">
+            <div className={`notice ${artifact.promotion.index_status === "FAILED" ? "notice-warn" : "notice-ok"}`}>
               <span>
-                Promoted as a new approved version, <b>{artifact.promotion.document_version_label}</b>. No existing SOP was overwritten. Search index: <Status value={artifact.promotion.index_status} /> (indexing isn&apos;t connected, so it isn&apos;t searchable yet).
+                Promoted as a new approved version, <b>{artifact.promotion.document_version_label}</b>. No existing SOP was overwritten.
               </span>
+              <span>
+                Search index: <Status value={artifact.promotion.index_status} label={INDEX_LABEL[artifact.promotion.index_status]} />{" "}
+                {api ? INDEX_NOTE[artifact.promotion.index_status] : "This preview doesn't index documents, so it isn't searchable here."}
+              </span>
+              {api && artifact.promotion.index_status === "FAILED" && canReview && (
+                <div>
+                  <button className="btn btn-small" disabled={cmd.pending} onClick={() => void cmd.run((cl, k) => cl.retryKtIndexing(artifact.artifact_id, cur.artifact_revision_id, { ...ver, idempotency_key: k }))}>
+                    Retry indexing
+                  </button>
+                </div>
+              )}
             </div>
           ) : canReview ? (
             <button className="btn btn-primary" disabled={cmd.pending} onClick={() => void cmd.run((cl, k) => cl.promoteArtifact(artifact.artifact_id, cur.artifact_revision_id, { ...ver, idempotency_key: k }))}>
@@ -362,3 +374,12 @@ function ArtifactDialog({ c, role, artifact, onClose }: { c: ExitKtCase; role: "
     </Dialog>
   );
 }
+
+/** Promoted knowledge in the assistants' search (ADR-053). */
+const INDEX_LABEL = { PENDING: "Indexing", READY: "Searchable", FAILED: "Indexing failed", REVOKED: "Removed" } as const;
+const INDEX_NOTE = {
+  PENDING: "It's being added to the assistants' search; this usually takes under a minute.",
+  READY: "The Work Companion, Shift Handover and Exit KT assistants can now find and cite it.",
+  FAILED: "It isn't in the assistants' answers yet. A reviewer can retry indexing.",
+  REVOKED: "It's no longer in the assistants' answers.",
+} as const;

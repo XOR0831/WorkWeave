@@ -198,6 +198,8 @@ export interface WorkWeaveClient {
   submitArtifact(artifact_id: string, artifact_revision_id: string, audience: "TEAM" | "ORGANIZATION", cmd: Command): Promise<ExitKtCase>;
   decideArtifact(artifact_id: string, artifact_revision_id: string, decision: "APPROVE" | "REQUEST_REVISION" | "REJECT", comment: string, cmd: Command): Promise<ExitKtCase>;
   promoteArtifact(artifact_id: string, artifact_revision_id: string, cmd: Command): Promise<ExitKtCase>;
+  /** A FAILED search index of promoted knowledge is tried again (ADR-053); never re-approves or re-promotes. */
+  retryKtIndexing(artifact_id: string, artifact_revision_id: string, cmd: Command): Promise<ExitKtCase>;
   editTransfer(transfer_id: string, final_owner_employee_id: string, cmd: Command): Promise<ExitKtCase>;
   reviewEffectiveTime(transfer_id: string, cmd: Command): Promise<ExitKtCase>;
   assemblePackage(cmd: Command): Promise<ExitKtCase>;

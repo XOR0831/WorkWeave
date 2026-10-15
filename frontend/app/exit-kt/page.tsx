@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useOnChange } from "@/lib/preview/use-on-change";
 import { RequireSession } from "@/components/shell/AppShell";
 import { Dialog, ErrorNotice, Loading, PageHeader, PageError, StateView, Status, humanize } from "@/components/ui";
@@ -56,6 +56,14 @@ function ExitKt() {
   const [area, setArea] = useAreaParam();
   const [setup, setSetup] = useState(false);
   const api = useRuntime().mode === "http";
+  // While promoted knowledge is being indexed (ADR-053), refresh until it's searchable or failed.
+  const indexing = api && !!kt.data?.artifacts.some((a) => a.promotion?.index_status === "PENDING");
+  const reload = kt.reload;
+  useEffect(() => {
+    if (!indexing) return;
+    const t = window.setInterval(reload, 4000);
+    return () => window.clearInterval(t);
+  }, [indexing, reload]);
 
   if (kt.loading) return <Loading label="Loading knowledge transfer" />;
   if (kt.error) return <PageError error={kt.error} onRetry={kt.reload} />;

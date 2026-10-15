@@ -19,7 +19,7 @@ from app.db import transaction
 from app.errors import ApiError
 from app.integrations import calendar_service
 from app.api import session_cookie
-from app.services import access, assignment, companion, demo_clock, exit_kt_ai, handover_ai, companion_turns, curriculum_authoring, curriculum_revisions, exit_kt, handover, knowledge, reviews, curricula, demo, engine_turns, notifications, onboarding, usage, voice, work_commands, work_sync
+from app.services import access, assignment, companion, demo_clock, exit_kt_ai, handover_ai, companion_turns, curriculum_authoring, curriculum_revisions, exit_kt, handover, kt_index, knowledge, reviews, curricula, demo, engine_turns, notifications, onboarding, usage, voice, work_commands, work_sync
 
 router = APIRouter()
 
@@ -750,7 +750,16 @@ def kt_decide_artifact(artifact_id: str, body: KtRevisionBody, request: Request)
 
 @router.post("/exit-kt/artifacts/{artifact_id}/promote", dependencies=[Depends(require_client_header)])
 def kt_promote(artifact_id: str, body: KtRevisionBody, request: Request) -> dict[str, Any]:
-    return _kt(request, exit_kt.promote_artifact, artifact_id, body.artifact_revision_id, body.idempotency_key, body.expected_revision, request.state.request_id)
+    out = _kt(request, exit_kt.promote_artifact, artifact_id, body.artifact_revision_id, body.idempotency_key, body.expected_revision, request.state.request_id)
+    kt_index.nudge()  # after commit: the indexer picks it up now
+    return out
+
+
+@router.post("/exit-kt/artifacts/{artifact_id}/retry-indexing", dependencies=[Depends(require_client_header)])
+def kt_retry_indexing(artifact_id: str, body: KtRevisionBody, request: Request) -> dict[str, Any]:
+    out = _kt(request, exit_kt.retry_indexing, artifact_id, body.artifact_revision_id, body.idempotency_key, body.expected_revision, request.state.request_id)
+    kt_index.nudge()
+    return out
 
 
 @router.patch("/exit-kt/transfers/{transfer_id}", dependencies=[Depends(require_client_header)])

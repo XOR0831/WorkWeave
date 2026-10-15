@@ -1698,6 +1698,10 @@ export class PreviewClient implements WorkWeaveClient, PreviewControls {
     this.notify(c.employee_id, "REVIEW_DECISION", `"${a.title}" v${cur.version}: ${cur.status.replace("_", " ").toLowerCase()}`, "/exit-kt/");
     return this.bump(c);
   }
+  async retryKtIndexing(): Promise<ExitKtCase> {
+    await this.gate("command");
+    this.fail("CAPABILITY_UNAVAILABLE", "Indexing runs on the WorkWeave backend; this preview doesn't embed documents.");
+  }
   async promoteArtifact(artifact_id: string, rev: string, cmd: Command): Promise<ExitKtCase> {
     await this.gate("command");
     const c = this.kt();
@@ -1977,7 +1981,7 @@ const CLIENT_METHODS: (keyof WorkWeaveClient)[] = [
   "listProposals", "getProposal", "editProposalItem", "confirmProposal", "rejectProposal",
   "createMemoryDraft", "listMyMemoryDrafts", "submitMemoryDraft", "deleteMemoryDraft",
   "getHandoverWorkspace", "editDraftSection", "acceptSuggestion", "createTemplateVersion", "ignoreSuggestion", "publishHandover", "confirmHandoverReceipt", "acknowledgeCompletion", "confirmItemCompletion", "askHandoverCopilot",
-  "getExitKtCase", "createExitKtCase", "addKnowledgeItem", "linkExistingKnowledge", "reviewFinding", "runDiscovery", "startInterview", "sendInterviewMessage", "draftArtifactFromInterview", "createManualArtifact", "editArtifact", "submitArtifact", "decideArtifact", "promoteArtifact", "editTransfer", "reviewEffectiveTime", "assemblePackage", "submitPackage", "decidePackage", "receivePackage", "askPackage", "confirmTransfer", "resolveChecklistItem", "recordChecklistException", "completeExitKtCase", "recommendSuccessors", "decidePlanItem", "askKtCopilot", "assignSuccessor",
+  "getExitKtCase", "createExitKtCase", "addKnowledgeItem", "linkExistingKnowledge", "reviewFinding", "runDiscovery", "startInterview", "sendInterviewMessage", "draftArtifactFromInterview", "createManualArtifact", "editArtifact", "submitArtifact", "decideArtifact", "promoteArtifact", "retryKtIndexing", "editTransfer", "reviewEffectiveTime", "assemblePackage", "submitPackage", "decidePackage", "receivePackage", "askPackage", "confirmTransfer", "resolveChecklistItem", "recordChecklistException", "completeExitKtCase", "recommendSuccessors", "decidePlanItem", "askKtCopilot", "assignSuccessor",
   "listCurricula", "getCurriculum", "createCurriculum", "createCurriculumRevision", "stageCurriculumSource", "parseCurriculumSource", "saveLearningPath", "saveSourceMappings", "saveObjective", "submitSourceForReview", "reviewSourceVersion", "retryIngestion", "publishCurriculum",
   "runHandoverGapCheck", "draftHandoverSections", "getShiftClock", "advanceShiftClock", "listReviews", "decideMemoryDraft", "listNotifications", "markNotificationRead", "getTimeline", "listDocumentVersions", "getSourceContent", "getExcerpt",
 ];

@@ -23,6 +23,7 @@ os.environ["COMPANION_ENGINE"] = "none"
 os.environ["HANDOVER_ENGINE"] = "none"
 os.environ["NOTIFICATIONS"] = "none"  # tests install an in-memory inbox where they need one
 os.environ["DISPATCHER_IN_PROCESS"] = "false"
+os.environ["KT_INDEX_IN_PROCESS"] = "false"  # tests run kt_index.index_due() themselves, with a stand-in embedder
 os.environ["EXIT_KT_ENGINE"] = "none"
 # Tests that need tickets assigned automatically (ADR-035) switch it on themselves.
 os.environ["AUTO_ASSIGN_WORK"] = "false"
