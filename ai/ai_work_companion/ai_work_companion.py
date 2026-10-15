@@ -121,9 +121,11 @@ class SchedulingContext(BaseModel):
     proposal: ScheduleProposal = Field(default_factory=ScheduleProposal)
     approval_status: str = "not_requested"
     response: str | None = None
+    # The last message wasn't about the pending proposal: answer it normally.
+    answer_other: bool = False
 
 class ScheduleApprovalDecision(BaseModel):
-    decision: Literal["APPROVE", "REJECT", "MODIFY", "UNCLEAR"]
+    decision: Literal["APPROVE", "REJECT", "MODIFY", "UNCLEAR", "OTHER"]
     requested_start: datetime | None = None
     requested_end: datetime | None = None
     requested_title: str | None = None
@@ -1009,15 +1011,22 @@ def analyze_user_response(state: WorkCompanionState) -> WorkCompanionState:
     - PRIORITY_CHANGE: the employee wants to work on something other
       than the currently recommended priority or asks to reconsider
       the work order.
-    - SCHEDULE_REQUEST: the employee asks about when work should be
-      done or wants help planning their work.
+    - SCHEDULE_REQUEST: the employee asks to plan, schedule, block
+      time for, or move their work on the calendar.
+        Examples:
+        - "Plan my tasks for the rest of my shift."
+        - "Schedule my work starting at 1 PM."
+        - "Block time for Ticket #829."
     - CALENDAR_INQUIRY: The employee asks to view, retrieve,
       summarize, or check existing Google Calendar events,
-      meetings, appointments, or scheduled activities.
+      meetings, appointments, or scheduled activities, including
+      their "schedule".
         Examples:
         - "What's on my calendar tomorrow?"
         - "Do I have meetings today?"
         - "Show my calendar events this week."
+        - "Check my schedule today."
+        - "What's my schedule this afternoon?"
         - "What's my next meeting?"
         - "What appointments do I have on Friday?"
         Calendar inquiries are different from WORK_OVERVIEW.
@@ -1097,6 +1106,10 @@ def analyze_user_response(state: WorkCompanionState) -> WorkCompanionState:
       referenced_work_item_id null; the next step finds the item.
     - SCHEDULE_REQUEST means planning or changing when work
       will be performed.
+    - Checking or viewing a schedule ("check my schedule", "what's
+      my schedule today") is CALENDAR_INQUIRY, not SCHEDULE_REQUEST.
+      Use SCHEDULE_REQUEST only when the employee asks to plan,
+      schedule, block time for, or move work.
 
     Recent conversation (oldest first):
     {json.dumps(state.conversation.history[-8:], indent=2)}
@@ -2894,6 +2907,8 @@ def calendar_inquiry(state: WorkCompanionState) -> WorkCompanionState:
 def handle_schedule_approval(state: WorkCompanionState) -> WorkCompanionState:
     scheduling = state.scheduling
 
+    scheduling.answer_other = False
+
     if scheduling.approval_status != "pending":
         state.conversation.assistant_message = (
             "There is no pending schedule awaiting approval."
@@ -2913,6 +2928,8 @@ def handle_schedule_approval(state: WorkCompanionState) -> WorkCompanionState:
             - REJECT: Declines or cancels the proposed schedule.
             - MODIFY: Requests changes to the proposed schedule.
             - UNCLEAR: Does not clearly approve, reject, or request changes.
+            - OTHER: Isn't about the proposed schedule at all (a question
+              about the calendar, tickets, or anything else).
 
             Examples:
             "Yes, schedule it" -> APPROVE
@@ -2922,6 +2939,9 @@ def handle_schedule_approval(state: WorkCompanionState) -> WorkCompanionState:
             "Move the first task to 3 PM" -> MODIFY
             "Can you make it later?" -> MODIFY
             "Maybe" -> UNCLEAR
+            "Can you check my schedule?" -> OTHER
+            "What's on my calendar today?" -> OTHER
+            "List my tickets" -> OTHER
 
             Rules:
             - Do not interpret ambiguous responses as approval.
@@ -2945,6 +2965,11 @@ def handle_schedule_approval(state: WorkCompanionState) -> WorkCompanionState:
     elif result.decision == "MODIFY":
         scheduling.approval_status = "changes_requested"
         scheduling.response = "Updating your proposed schedule..."
+
+    elif result.decision == "OTHER":
+        # Answer the message normally; the proposal stays open for later.
+        scheduling.answer_other = True
+        return state
 
     else:
         scheduling.approval_status = "pending"
@@ -3987,6 +4012,9 @@ def route_pending_schedule(state: WorkCompanionState) -> str:
     return "analyze_user_response"
 
 def route_schedule_approval(state: WorkCompanionState) -> str:
+    if state.scheduling.answer_other:
+        return "answer_other"
+
     status = state.scheduling.approval_status
 
     if status == "approved":
@@ -4086,6 +4114,7 @@ work_companion_builder.add_conditional_edges(
     {
         "create_events": "create_approved_calendar_events",
         "modify": "modify_schedule_proposal",
+        "answer_other": "analyze_user_response",
         "wait_for_user": "wait_for_user"
     }
 )

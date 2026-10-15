@@ -118,7 +118,13 @@ CHUNK = 32 * 1024
 # the spoken form below are deterministic text handling only; the chat text is never changed.
 FIRST_PART_MIN = 20  # a first sentence shorter than this ("Sure!") is joined to the next
 FIRST_PART_MAX = 120  # a longer first sentence starts with its first clause, so sound starts sooner
-REST_MAX = 3000  # the rest is one part unless longer than this (speech services cap a request)
+# Each later part is at most GROWTH times the one before it (at least GROWTH_MIN characters), so it is
+# generated before the one before it finishes playing. Measured 2026-10-15 (Chirp 3 HD): about 1.1 s
+# to generate per 100 characters, while 100 characters take about 7 s to say; one big second part
+# (475 characters, 5.4 s to make) left a pause after a 3-second first sentence.
+GROWTH = 3
+GROWTH_MIN = 80
+REST_MAX = 3000  # never more than this in one part (speech services cap a request)
 # A sentence ends at . ! ? or … (optionally followed by a closing quote or bracket), then a space,
 # then something that starts a sentence. "e.g. this" and "3.5" don't split.
 _CLOSE = "\"'”’)]"
@@ -166,8 +172,9 @@ def _first_clause(sentence: str) -> list[str]:
 
 
 def speech_parts(reply: str) -> list[str]:
-    """The reply as read aloud (spoken_text), in parts: a short opening, then the rest in one part
-    (more only past REST_MAX). Sentences from separate lines are joined with a line break (a pause)."""
+    """The reply as read aloud (spoken_text), in parts: a short opening, then parts that grow (each
+    at most GROWTH times the one before), so the next is ready before the one playing ends. Sentences
+    from separate lines are joined with a line break (a pause)."""
     pieces: list[tuple[str, bool]] = []  # (sentence, starts a new line)
     for line in spoken_text(reply).splitlines():
         for i, sentence in enumerate(x.strip() for x in _SENTENCE_END.split(line) if x.strip()):
@@ -181,7 +188,8 @@ def speech_parts(reply: str) -> list[str]:
     parts = _first_clause(first)
     tail = ""
     for sentence, new_line in rest:
-        if tail and len(tail) + 1 + len(sentence) > REST_MAX:
+        budget = min(REST_MAX, max(GROWTH_MIN, GROWTH * len(parts[-1])))
+        if tail and len(tail) + 1 + len(sentence) > budget:
             parts.append(tail)
             tail = ""
         tail = tail + ("\n" if new_line else " ") + sentence if tail else sentence

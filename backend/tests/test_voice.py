@@ -506,12 +506,17 @@ LONG_REPLY = (
 )
 
 
-def test_speech_parts_are_a_short_opening_then_the_rest():
-    from app.services.voice import FIRST_PART_MAX, REST_MAX, speech_parts
+def test_speech_parts_are_a_short_opening_then_parts_that_grow():
+    from app.services.voice import FIRST_PART_MAX, GROWTH, GROWTH_MIN, REST_MAX, speech_parts
 
     parts = speech_parts(LONG_REPLY)
-    assert len(parts) == 2 and len(parts[0]) <= FIRST_PART_MAX  # two requests per reply (speech limits)
+    assert len(parts) >= 2 and len(parts[0]) <= FIRST_PART_MAX
     assert " ".join(parts) == LONG_REPLY
+    # A long reply: each part at most GROWTH times the one before (so it's ready before that one ends).
+    long_reply = "Here is your plan. " + " ".join(f"Ticket {800 + i} needs a check of the bolts on line {i}, and the readings go in the log." for i in range(12))
+    parts = speech_parts(long_reply)
+    assert " ".join(parts) == long_reply and len(parts) >= 3
+    assert all(len(b) <= max(GROWTH_MIN, GROWTH * len(a)) for a, b in zip(parts, parts[1:]))
     long = " ".join(f"Sentence number {i} is here." for i in range(400))
     assert all(len(p) <= REST_MAX for p in speech_parts(long)) and " ".join(speech_parts(long)) == long
     assert speech_parts('He said "Stop now." Then he left.') == ['He said "Stop now." Then he left.']  # the quote stays
