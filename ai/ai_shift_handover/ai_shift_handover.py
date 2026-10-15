@@ -154,6 +154,14 @@ class ReportCtx(BaseModel):
     reported_at: datetime
 
 
+def _reported_status(row: dict) -> str:
+    """A report saved without a status (a blocker reported in the Work Companion) reads as BLOCKED, or
+    IN_PROGRESS for other updates, as the Companion reads it (app/services/companion.py said())."""
+    if row.get("reported_status"):
+        return row["reported_status"]
+    return "BLOCKED" if row.get("update_type") == "BLOCKER" else "IN_PROGRESS"
+
+
 class PublicationCtx(BaseModel):
     publication_id: str
     publication_number: int
@@ -478,7 +486,7 @@ def query_context(org: str, ws: str, handover_id: str, include_draft: bool) -> O
                                 FROM {W}.work_events ev LEFT JOIN {W}.employees e ON e.organization_id=ev.organization_id AND e.workspace_id=ev.workspace_id AND e.employee_id=ev.employee_id
                                 WHERE ev.organization_id=CAST(:o AS uuid) AND ev.workspace_id=CAST(:w AS uuid) AND ev.work_item_id::text = ANY(:ids)
                                 ORDER BY ev.observed_at DESC LIMIT 60""", {**p, "ids": ids})] if ids else []
-    reports = [ReportCtx(reported_update_id=str(x["reported_update_id"]), work_item_id=str(x["work_item_id"]), reported_status=x["reported_status"], blocker=x["blocker"],
+    reports = [ReportCtx(reported_update_id=str(x["reported_update_id"]), work_item_id=str(x["work_item_id"]), reported_status=_reported_status(x), blocker=x["blocker"],
                          description=x["description"] or "", source_sync_status=x["source_sync_status"], employee_name=x["employee_name"], reported_at=x["reported_at"])
                for x in _all(f"""SELECT r.*, e.first_name || ' ' || e.last_name AS employee_name FROM {W}.work_item_reported_updates r
                                  LEFT JOIN {W}.employees e ON e.organization_id=r.organization_id AND e.workspace_id=r.workspace_id AND e.employee_id=r.employee_id
