@@ -33,6 +33,10 @@ locals {
     NOTIFICATIONS           = "firestore"
     FIRESTORE_PROJECT       = var.project_id
     DISPATCHER_IN_PROCESS   = "true"
+    # Read-aloud through Cloud Text-to-Speech on the project's billing; the AI Studio key (100 speech
+    # requests a day) is only the fallback. Vertex AI's Gemini speech isn't used: it distorts.
+    VOICE_TTS_BACKEND     = "cloud_tts"
+    VOICE_TTS_CLOUD_VOICE = "en-US-Chirp3-HD-Kore"
     # Uploaded source originals (the text itself is stored in PostgreSQL); the image's /srv is read-only
     # for the app user, and there is no Cloud Storage adapter yet.
     LOCAL_STORAGE_DIR = "/tmp/workweave-storage"

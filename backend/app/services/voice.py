@@ -110,20 +110,46 @@ class AudioCache:
 audio_cache = AudioCache()
 CHUNK = 32 * 1024
 
-# Read-aloud sentence by sentence (owner, 2026-10-13). Firebase Hosting holds a streamed response
-# until it is complete, so one request for a whole reply plays nothing until all of it is generated
-# (about 10 s for a long Companion reply). The browser instead asks for one part at a time, plays it
-# and fetches the next meanwhile; each part also plays as one piece of audio, which avoids the
-# clicks Chrome makes where many small pieces join. The split is deterministic text handling only.
+# Read-aloud in parts (owner, 2026-10-13/15). Firebase Hosting holds a streamed response until it is
+# complete, so one request for a whole reply played nothing until all of it was generated. The
+# browser asks for a short first part, plays it and fetches the rest meanwhile; each part plays as
+# one piece of audio, which avoids the clicks Chrome makes where many small pieces join. At most two
+# parts for a normal reply (every request counts against the speech service's limits). The split and
+# the spoken form below are deterministic text handling only; the chat text is never changed.
 FIRST_PART_MIN = 20  # a first sentence shorter than this ("Sure!") is joined to the next
 FIRST_PART_MAX = 120  # a longer first sentence starts with its first clause, so sound starts sooner
-PART_MIN = 80  # later parts gather sentences until at least this long ...
-PART_MAX = 320  # ... without going past this (a single longer sentence stays whole)
+REST_MAX = 3000  # the rest is one part unless longer than this (speech services cap a request)
 # A sentence ends at . ! ? or … (optionally followed by a closing quote or bracket), then a space,
 # then something that starts a sentence. "e.g. this" and "3.5" don't split.
 _CLOSE = "\"'”’)]"
 _SENTENCE_END = re.compile(rf"(?:(?<=[.!?…])|(?<=[.!?…][{re.escape(_CLOSE)}]))\s+(?=[\"'“‘(\[]?[A-Z0-9#*])")
 _CLAUSE = re.compile(r"(?:, |; |: | — | – |—)")
+_BULLET = re.compile(r"^\s*(?:[-*•]|#{1,6})\s+")  # "- item", "* item", "## Heading" (not "#829")
+_EMPHASIS = re.compile(r"\*\*|__|`")
+_TIME = r"\d{1,2}:\d{2}\s?(?:[AaPp]\.?[Mm]\.?)?"
+_RANGE = re.compile(rf"({_TIME})\s*(?:–|—|-)\s*(?=(?:[A-Z][a-z]{{2}} \d{{1,2}}, )?\d{{1,2}}:\d{{2}})")
+_LEADING_ZERO = re.compile(r"\b0(\d:\d{2})")
+_MIDDOT = re.compile(r"\s+·\s+")
+
+
+def spoken_text(reply: str) -> str:
+    """The reply as it should be heard (owner, 2026-10-15): without markdown symbols, "01:30 PM" as
+    "1:30 PM", "1:00 PM – 1:30 PM" as "1:00 PM to 1:30 PM", and each line ending as a sentence so a
+    list is read item by item. Measured: read as written, a speech model misread "01:30 PM" and
+    dropped the second of two bullet lines."""
+    lines = []
+    for line in reply.splitlines():
+        line = _MIDDOT.sub(", ", _EMPHASIS.sub("", _BULLET.sub("", line)))
+        line = _LEADING_ZERO.sub(r"\1", _RANGE.sub(r"\1 to ", line))
+        line = " ".join(line.split())
+        if not line:
+            continue
+        if line[-1] in ":;,":
+            line = line[:-1] + "."
+        elif line[-1] not in ".!?…\"'”’":
+            line += "."
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _first_clause(sentence: str) -> list[str]:
@@ -140,23 +166,28 @@ def _first_clause(sentence: str) -> list[str]:
 
 
 def speech_parts(reply: str) -> list[str]:
-    """The reply as consecutive parts to read aloud: its sentences, in order, unchanged. Sentences
-    from separate lines are joined with a line break (a pause), never run together."""
+    """The reply as read aloud (spoken_text), in parts: a short opening, then the rest in one part
+    (more only past REST_MAX). Sentences from separate lines are joined with a line break (a pause)."""
     pieces: list[tuple[str, bool]] = []  # (sentence, starts a new line)
-    for line in reply.splitlines():
-        line = " ".join(line.split())
+    for line in spoken_text(reply).splitlines():
         for i, sentence in enumerate(x.strip() for x in _SENTENCE_END.split(line) if x.strip()):
             pieces.append((sentence, i == 0))
-    parts: list[str] = []
-    for sentence, new_line in pieces:
-        minimum = FIRST_PART_MIN if len(parts) == 1 else PART_MIN
-        if parts and len(parts[-1]) < minimum and len(parts[-1]) + 1 + len(sentence) <= PART_MAX:
-            parts[-1] = parts[-1] + ("\n" if new_line else " ") + sentence
-        else:
-            parts.append(sentence)
-    if not parts:
-        return [reply]
-    return _first_clause(parts[0]) + parts[1:]
+    if not pieces:
+        return [reply.strip() or reply]
+    first, rest = pieces[0][0], pieces[1:]
+    while rest and len(first) < FIRST_PART_MIN:
+        sentence, new_line = rest.pop(0)
+        first += ("\n" if new_line else " ") + sentence
+    parts = _first_clause(first)
+    tail = ""
+    for sentence, new_line in rest:
+        if tail and len(tail) + 1 + len(sentence) > REST_MAX:
+            parts.append(tail)
+            tail = ""
+        tail = tail + ("\n" if new_line else " ") + sentence if tail else sentence
+    if tail:
+        parts.append(tail)
+    return parts
 
 
 class _Charged:

@@ -2421,6 +2421,50 @@ def load_calendar_availability(state: SchedulingState) -> SchedulingState:
 
     return state
 
+class ScheduleStartRequest(BaseModel):
+    start: datetime | None = None
+
+def requested_schedule_start(state: SchedulingState, shift: EmployeeShift) -> datetime | None:
+    message = state.conversation.user_message or ""
+
+    if not message.strip():
+        return None
+
+    tz = ZoneInfo(shift.timezone)
+    now = datetime.now(tz)
+
+    try:
+        result = llm_chat.with_structured_output(
+            ScheduleStartRequest
+        ).invoke([
+            SystemMessage(content=f"""
+                Extract the earliest start time the employee asked for when planning their work.
+
+                Current local datetime: {now.isoformat()}
+                Timezone: {shift.timezone}
+
+                Examples:
+                "Plan my tasks starting at 1 PM" -> today at 1 PM
+                "Schedule my work an hour from now" -> the current time plus one hour
+                "Schedule my tasks" -> null
+
+                Rules:
+                - Interpret times in the employee's timezone.
+                - Return null when no start time is mentioned.
+            """),
+            HumanMessage(content=message)
+        ])
+    except Exception as exc:
+        print(f"schedule start extraction error: {exc}")  # details stay in the server log, never in the reply
+        return None
+
+    start = result.start
+
+    if start is not None and start.tzinfo is None:
+        start = start.replace(tzinfo=tz)
+
+    return start
+
 def calculate_free_slots(state: SchedulingState) -> SchedulingState:
     if state.scheduling.error:
         return state
@@ -2443,6 +2487,15 @@ def calculate_free_slots(state: SchedulingState) -> SchedulingState:
     # Restrict scheduling to the remaining shift time.
     now = datetime.now(timezone.utc)
     window_start = max(shift_start, now)
+
+    # Start no earlier than a time the employee asked for ("start at 1 PM", "an hour from now").
+    requested_start = requested_schedule_start(state, shift)
+
+    if requested_start is not None:
+        window_start = max(
+            window_start,
+            requested_start.astimezone(timezone.utc)
+        )
 
     if window_start >= shift_end:
         return state
@@ -2914,6 +2967,11 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
         state.conversation.assistant_message = scheduling.response
         return state
 
+    # The proposal stays open while we ask a follow-up question ("which
+    # event?", "that time has passed"), so the employee's answer is handled
+    # as a change to it, not as a new request that plans from now.
+    scheduling.approval_status = "pending"
+
     timezone_name = (
         scheduling.shifts[0].timezone
         if scheduling.shifts
@@ -2924,6 +2982,8 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
     now = datetime.now(tz)
 
     class ScheduleModification(BaseModel):
+        work_item_ids: list[str] = Field(default_factory=list)
+        shift_minutes: int | None = None
         start: datetime | None = None
         end: datetime | None = None
         title: str | None = None
@@ -2942,9 +3002,19 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
             Existing proposal:
             {scheduling.proposal.model_dump_json(indent=2)}
 
+            Fields:
+            - work_item_ids: the proposed tasks the change is for, by work_item_id.
+              Leave it empty when the employee means the whole proposal: "it",
+              "them", "both", "all of them", "the schedule", or no task named.
+            - shift_minutes: a relative move. "30 minutes later" -> 30,
+              "an hour earlier" -> -60. Leave start null then.
+            - start: a new start time. "at 1 PM" -> today at 1 PM,
+              "an hour from now" -> the current local datetime plus one hour.
+            - end: only when a new end time is explicitly requested.
+            - title: only when a new name is explicitly requested.
+
             Rules:
             - Interpret times in the employee's timezone.
-            - Preserve existing values unless explicitly changed.
             - Return null for fields not requested.
             - Resolve midnight correctly.
             - Do not approve or create calendar events.
@@ -2954,87 +3024,152 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
         )
     ])
 
-    if len(scheduling.proposal.tasks) != 1:
-        scheduling.response = (
-            "Which proposed event would you like to change?"
-        )
-        state.conversation.assistant_message = scheduling.response
-        return state
+    tasks = scheduling.proposal.tasks
 
-    task = scheduling.proposal.tasks[0]
-
-    start = modification.start or task.start
-    end = modification.end or task.end
-
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=tz)
-
-    if end.tzinfo is None:
-        end = end.replace(tzinfo=tz)
-
-    if end <= start:
-        scheduling.response = (
-            "The ending time must be after the starting time. "
-            "What time would you like the event to end?"
-        )
-        state.conversation.assistant_message = scheduling.response
-        return state
-
-    if start <= now:
-        scheduling.response = (
-            "That time has already passed. "
-            "Please choose a future time."
-        )
-        state.conversation.assistant_message = scheduling.response
-        return state
-
-    # Validate against the employee's shift.
-    if scheduling.shifts:
-        shift = scheduling.shifts[0]
-
-        if (
-            start < shift.scheduled_start_at
-            or end > shift.scheduled_end_at
-        ):
-            scheduling.response = (
-                "That time is outside your scheduled shift. "
-                "Please choose a time within your shift."
-            )
-            state.conversation.assistant_message = scheduling.response
-            return state
-
-    # Validate against the previously retrieved busy periods.
-    # Refresh availability before final approval.
-    for busy in scheduling.busy_periods:
-        if start < busy.end and end > busy.start:
-            scheduling.response = (
-                "That time conflicts with an existing calendar event. "
-                "Please choose another time."
-            )
-            state.conversation.assistant_message = scheduling.response
-            return state
-
-    task.start = start
-    task.end = end
-    task.duration_minutes = int(
-        (end - start).total_seconds() / 60
+    targets = (
+        [
+            task
+            for task in tasks
+            if task.work_item_id in modification.work_item_ids
+        ]
+        if modification.work_item_ids
+        else list(tasks)
     )
 
-    if modification.title:
-        task.title = modification.title
+    if not targets:
+        names = ", ".join(task.title for task in tasks)
+        scheduling.response = (
+            f"Which proposed event would you like to change: {names}?"
+        )
+        state.conversation.assistant_message = scheduling.response
+        return state
+
+    targets.sort(key=lambda task: task.start)
+
+    # Move the events together: the first one goes to the new start (or
+    # all of them by the same amount), keeping their lengths and the gaps
+    # between them.
+    if modification.shift_minutes:
+        delta = timedelta(minutes=modification.shift_minutes)
+
+    elif modification.start is not None:
+        new_start = modification.start
+
+        if new_start.tzinfo is None:
+            new_start = new_start.replace(tzinfo=tz)
+
+        delta = new_start - targets[0].start
+
+    else:
+        delta = timedelta(0)
+
+    moves = [
+        (task, task.start + delta, task.end + delta)
+        for task in targets
+    ]
+
+    if modification.end is not None and len(moves) == 1:
+        end = modification.end
+
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=tz)
+
+        moves = [(moves[0][0], moves[0][1], end)]
+
+    renamed = bool(modification.title) and len(targets) == 1
+
+    if delta == timedelta(0) and modification.end is None and not renamed:
+        scheduling.response = (
+            "What would you like to change: the start time, "
+            "or how long it takes?"
+        )
+        state.conversation.assistant_message = scheduling.response
+        return state
+
+    moved = {id(task) for task, _, _ in moves}
+    others = [task for task in tasks if id(task) not in moved]
+
+    for task, start, end in moves:
+        if end <= start:
+            scheduling.response = (
+                "The ending time must be after the starting time. "
+                "What time would you like the event to end?"
+            )
+            state.conversation.assistant_message = scheduling.response
+            return state
+
+        if start <= now:
+            scheduling.response = (
+                "That time has already passed. "
+                "Please choose a future time."
+            )
+            state.conversation.assistant_message = scheduling.response
+            return state
+
+        # Validate against the employee's shift.
+        if scheduling.shifts:
+            shift = scheduling.shifts[0]
+
+            if (
+                start < shift.scheduled_start_at
+                or end > shift.scheduled_end_at
+            ):
+                scheduling.response = (
+                    "That time is outside your scheduled shift. "
+                    "Please choose a time within your shift."
+                )
+                state.conversation.assistant_message = scheduling.response
+                return state
+
+        # Validate against the previously retrieved busy periods.
+        # Refresh availability before final approval.
+        for busy in scheduling.busy_periods:
+            if start < busy.end and end > busy.start:
+                scheduling.response = (
+                    "That time conflicts with an existing calendar event. "
+                    "Please choose another time."
+                )
+                state.conversation.assistant_message = scheduling.response
+                return state
+
+        # Don't overlap the proposal's other events.
+        for other in others:
+            if start < other.end and end > other.start:
+                scheduling.response = (
+                    f"That time overlaps **{other.title}** in this proposal. "
+                    "Please choose another time, or move both together."
+                )
+                state.conversation.assistant_message = scheduling.response
+                return state
+
+    for task, start, end in moves:
+        task.start = start
+        task.end = end
+        task.duration_minutes = int(
+            (end - start).total_seconds() / 60
+        )
+
+    if renamed:
+        targets[0].title = modification.title
+
+    tasks.sort(key=lambda task: task.start)
 
     scheduling.proposal.total_scheduled_minutes = sum(
         item.duration_minutes
-        for item in scheduling.proposal.tasks
+        for item in tasks
     )
 
     scheduling.approval_status = "pending"
 
-    scheduling.response = (
-        f"I've updated your proposal:\n\n"
+    lines = "\n\n".join(
         f"**{task.title}**\n"
-        f"Time: {start.astimezone(tz):%b %d, %I:%M %p}"
-        f" – {end.astimezone(tz):%b %d, %I:%M %p}\n\n"
+        f"Time: {task.start.astimezone(tz):%b %d, %I:%M %p}"
+        f" – {task.end.astimezone(tz):%b %d, %I:%M %p}"
+        for task in tasks
+    )
+
+    scheduling.response = (
+        f"I've updated your proposal:\n\n{lines}\n\n"
         "Would you like me to add this to Google Calendar?"
     )
 

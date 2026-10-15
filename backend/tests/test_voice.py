@@ -250,7 +250,10 @@ def test_speech_backend_follows_configuration(monkeypatch):
     cases = [({}, "gemini_api"), ({"GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p"}, "gemini_api"),
              ({"GOOGLE_GENAI_USE_VERTEXAI": "true"}, "gemini_api"),  # no project: can't address Vertex
              ({"GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p", "VOICE_TTS_BACKEND": "gemini_api"}, "gemini_api"),
-             ({"VOICE_TTS_BACKEND": "vertex", "GOOGLE_CLOUD_PROJECT": "p"}, "vertex")]
+             ({"VOICE_TTS_BACKEND": "vertex", "GOOGLE_CLOUD_PROJECT": "p"}, "vertex"),
+             ({"VOICE_TTS_BACKEND": "cloud_tts", "GOOGLE_CLOUD_PROJECT": "p"}, "cloud_tts"),  # Cloud Run (owner 2026-10-15)
+             ({"VOICE_TTS_BACKEND": "cloud_tts", "GOOGLE_GENAI_USE_VERTEXAI": "true", "GOOGLE_CLOUD_PROJECT": "p"}, "cloud_tts"),
+             ({"VOICE_TTS_BACKEND": "cloud_tts"}, "gemini_api")]  # no project: the key only
     try:
         for env, expected in cases:
             for k in ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_CLOUD_PROJECT", "VOICE_TTS_BACKEND"):
@@ -319,6 +322,55 @@ def test_read_aloud_falls_back_to_vertex_only_when_the_api_key_fails():
     no_fallback = GeminiVoice("k", "l", "m", "Kore", ["en-US"], "VERBATIM", client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(429))))
     with pytest.raises(VoiceUnavailable):
         no_fallback.speak_stream("Hi")
+
+
+def wav(pcm: bytes, rate: int = 24000) -> bytes:
+    import io
+    import wave
+
+    b = io.BytesIO()
+    with wave.open(b, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return b.getvalue()
+
+
+def test_cloud_text_to_speech_reads_the_text_with_the_chirp_voice_and_the_service_token():
+    from app.integrations.voice import CloudSpeech
+
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["url"], seen["auth"], seen["body"] = str(req.url), req.headers.get("authorization"), json.loads(req.content)
+        return httpx.Response(200, json={"audioContent": base64.b64encode(wav(b"\x01\x00\x02\x00")).decode()})
+
+    cs = CloudSpeech("p", "en-US-Chirp3-HD-Kore", httpx.Client(transport=httpx.MockTransport(handler)), FixedToken())
+    st = cs.speak_stream("Would you like me to add this to Google Calendar?")
+    assert seen["url"] == "https://texttospeech.googleapis.com/v1/text:synthesize" and seen["auth"] == "Bearer ya29.test"
+    assert seen["body"] == {"input": {"text": "Would you like me to add this to Google Calendar?"}, "voice": {"languageCode": "en-US", "name": "en-US-Chirp3-HD-Kore"},
+                            "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 24000}}
+    assert st.rate == 24000 and b"".join(st.chunks) == b"\x01\x00\x02\x00"  # the WAV header is removed: raw PCM, one piece
+    assert cs.speak("Hi")[:4] == b"RIFF"
+
+
+def test_read_aloud_uses_cloud_text_to_speech_and_the_api_key_only_if_it_fails():
+    from app.integrations.voice import CloudSpeech
+
+    key_calls = []
+
+    def key(req: httpx.Request) -> httpx.Response:
+        key_calls.append(str(req.url))
+        return httpx.Response(200, content=sse(audio_event(b"\x09\x00", "audio/L16;codec=pcm;rate=24000")), headers={"content-type": "text/event-stream"})
+
+    def voice(cloud_status: int) -> GeminiVoice:
+        cloud = CloudSpeech("p", "en-US-Chirp3-HD-Kore", httpx.Client(transport=httpx.MockTransport(
+            lambda r: httpx.Response(cloud_status, json={"audioContent": base64.b64encode(wav(b"\x07\x00")).decode()} if cloud_status == 200 else {"error": {"message": "no"}}))), FixedToken())
+        return GeminiVoice("k", "l", "m", "Kore", ["en-US"], "VERBATIM", client=httpx.Client(transport=httpx.MockTransport(key)), speech=cloud)
+
+    assert b"".join(voice(200).speak_stream("Hi").chunks) == b"\x07\x00" and key_calls == []
+    assert b"".join(voice(503).speak_stream("Hi").chunks) == b"\x09\x00" and len(key_calls) == 1  # the key keeps read-aloud going
 
 
 def test_vertex_streamed_speech_uses_the_stream_endpoint_with_the_service_token():
@@ -454,17 +506,30 @@ LONG_REPLY = (
 )
 
 
-def test_speech_parts_keep_every_sentence_in_order_and_start_short():
-    from app.services.voice import FIRST_PART_MAX, PART_MAX, speech_parts
+def test_speech_parts_are_a_short_opening_then_the_rest():
+    from app.services.voice import FIRST_PART_MAX, REST_MAX, speech_parts
 
     parts = speech_parts(LONG_REPLY)
-    assert len(parts) >= 2 and len(parts[0]) <= FIRST_PART_MAX and all(len(p) <= PART_MAX for p in parts)
+    assert len(parts) == 2 and len(parts[0]) <= FIRST_PART_MAX  # two requests per reply (speech limits)
     assert " ".join(parts) == LONG_REPLY
+    long = " ".join(f"Sentence number {i} is here." for i in range(400))
+    assert all(len(p) <= REST_MAX for p in speech_parts(long)) and " ".join(speech_parts(long)) == long
     assert speech_parts('He said "Stop now." Then he left.') == ['He said "Stop now." Then he left.']  # the quote stays
     assert speech_parts("Use e.g. SOP-001 v3.4 here.") == ["Use e.g. SOP-001 v3.4 here."]  # no split inside
     lines = speech_parts("Two things.\n- Ticket #829.\n- Ticket #910.")
-    assert "\n".join(lines).replace("\n", " ").split() == "Two things. - Ticket #829. - Ticket #910.".split()
-    assert all(" - " not in p for p in lines)  # lines are joined with a line break (a pause), never run together
+    assert lines == ["Two things.\nTicket #829.", "Ticket #910."]  # a short opening takes the next line; bullets dropped, lines kept apart
+
+
+def test_the_spoken_form_reads_schedules_cleanly_without_changing_the_words():
+    from app.services.voice import spoken_text
+
+    reply = ("I've updated your proposal:\n\n**Machine #14 inspection**\nTime: Oct 15, 01:00 PM – Oct 15, 01:30 PM\n\n"
+             "- **Ticket #829 · Machine #14 inspection**: 12:10 PM – 12:40 PM (30 min)\n## Next\nWould you like me to add this to Google Calendar?")
+    assert spoken_text(reply) == (
+        "I've updated your proposal.\nMachine #14 inspection.\nTime: Oct 15, 1:00 PM to Oct 15, 1:30 PM.\n"
+        "Ticket #829, Machine #14 inspection: 12:10 PM to 12:40 PM (30 min).\nNext.\nWould you like me to add this to Google Calendar?"
+    )
+    assert spoken_text("Version 3.4 of SOP-001, ticket #829, costs 10:05.") == "Version 3.4 of SOP-001, ticket #829, costs 10:05."  # nothing else changes
 
 
 def test_a_reply_read_in_parts_costs_one_allowance_and_each_part_replays_free(client, engine, fake_voice, tutor):

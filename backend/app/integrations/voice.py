@@ -46,6 +46,7 @@ LIVE_WS = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelangua
 TOKEN_FIELD_MASK = "model,generationConfig.responseModalities,inputAudioTranscription,realtimeInputConfig"
 MAX_SPEECH_CHARS = 4000
 VERTEX = "https://aiplatform.googleapis.com/v1"
+CLOUD_TTS = "https://texttospeech.googleapis.com/v1/text:synthesize"
 METADATA_TOKEN = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
 
 Mode = Literal["TAP", "HANDS_FREE"]
@@ -282,6 +283,50 @@ class VertexSpeech:
         return _audio_of(_raise_for(r))
 
 
+class CloudSpeech:
+    """Google Cloud Text-to-Speech (Chirp 3 HD voices), billed to the project (owner, 2026-10-15).
+    The AI Studio key allows only 100 speech requests a day, and Vertex AI's Gemini speech distorts
+    (a near-full-scale burst at the start and clipping during speech, measured 2026-10-15). A speech
+    service reads the text as written; it never treats it as a prompt. Audio arrives in one piece
+    per request, which suits read-aloud in parts."""
+
+    def __init__(self, project: str, voice: str, client: httpx.Client, token: Any, rate: int = 24000):
+        self.project = project
+        self.voice = voice
+        self.language = "-".join(voice.split("-")[:2])  # "en-US-Chirp3-HD-Kore" -> "en-US"
+        self.rate = rate
+        self._client = client
+        self._token = token
+
+    def _pcm(self, text: str) -> bytes:
+        text = text.strip()
+        if not text:
+            raise VoiceUnavailable("There's nothing to read aloud.")
+        body = {
+            "input": {"text": text[:MAX_SPEECH_CHARS]},
+            "voice": {"languageCode": self.language, "name": self.voice},
+            "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": self.rate},
+        }
+        try:
+            r = self._client.post(CLOUD_TTS, json=body, headers={"Authorization": f"Bearer {self._token.get()}"})
+        except httpx.HTTPError as e:
+            raise VoiceUnavailable("The reply couldn't be read aloud because an error was encountered. It stays on screen; try again in a moment.", retryable=True) from e
+        audio = base64.b64decode(_raise_for(r).get("audioContent") or "")
+        if audio[:4] == b"RIFF":
+            with wave.open(io.BytesIO(audio)) as w:
+                audio = w.readframes(w.getnframes())
+        if not audio:
+            raise VoiceUnavailable("The reply couldn't be read aloud because an error was encountered. It stays on screen; try again in a moment.")
+        return audio
+
+    def speak_stream(self, text: str) -> SpeechStream:
+        pcm = self._pcm(text)
+        return SpeechStream(self.rate, iter([pcm]))
+
+    def speak(self, text: str) -> bytes:
+        return to_wav(self._pcm(text), f"audio/L16;rate={self.rate}")
+
+
 class GeminiVoice:
     provider = "gemini"
 
@@ -336,12 +381,17 @@ class GeminiVoice:
 
     @property
     def speech_backend(self) -> str:
-        return "vertex" if self._speech else "gemini_api"
+        return "cloud_tts" if isinstance(self._speech, CloudSpeech) else "vertex" if self._speech else "gemini_api"
 
     def speak_stream(self, text: str) -> SpeechStream:
         """Audio as it is generated (first sound in ~1.5 s instead of waiting for the whole reply)."""
         if self._speech:
-            return self._speech.speak_stream(text)
+            try:
+                return self._speech.speak_stream(text)
+            except VoiceUnavailable:
+                if not isinstance(self._speech, CloudSpeech):
+                    raise
+                _log.warning("spoken reply: Cloud Text-to-Speech failed; using the Gemini API key instead")
         body = _speech_body(text, self.tts_voice)
         try:
             return _stream_audio(self._client, f"{API}/models/{self.tts_model}:streamGenerateContent?alt=sse", body, {"x-goog-api-key": self._key})
@@ -353,7 +403,12 @@ class GeminiVoice:
 
     def speak(self, text: str) -> bytes:
         if self._speech:
-            return self._speech.speak(text)
+            try:
+                return self._speech.speak(text)
+            except VoiceUnavailable:
+                if not isinstance(self._speech, CloudSpeech):
+                    raise
+                _log.warning("spoken reply: Cloud Text-to-Speech failed; using the Gemini API key instead")
         body = _speech_body(text, self.tts_voice)
         try:
             return _audio_of(self._post(f"{API}/models/{self.tts_model}:generateContent", body))
@@ -393,10 +448,16 @@ _SHARED = httpx.Client(timeout=httpx.Timeout(20.0, connect=5.0))
 _TOKEN = MetadataToken(_SHARED)
 
 
-def vertex_speech() -> VertexSpeech | None:
-    """Speech through Vertex AI first: only when VOICE_TTS_BACKEND=vertex (and a project is set)."""
+def vertex_speech() -> VertexSpeech | CloudSpeech | None:
+    """The speech source tried before the Gemini API key: Cloud Text-to-Speech when
+    VOICE_TTS_BACKEND=cloud_tts (falls back to the key if it fails), Vertex AI when "vertex" (no
+    fallback). Both need a project."""
     s = get_settings()
-    if s.voice_tts_backend != "vertex" or not s.google_cloud_project:
+    if not s.google_cloud_project:
+        return None
+    if s.voice_tts_backend == "cloud_tts":
+        return CloudSpeech(s.google_cloud_project, s.voice_tts_cloud_voice, _SHARED, _TOKEN)
+    if s.voice_tts_backend != "vertex":
         return None
     return VertexSpeech(s.google_cloud_project, s.google_cloud_location, s.voice_tts_model, s.voice_tts_voice, _SHARED, _TOKEN)
 

@@ -20,7 +20,8 @@ resource "google_project_service" "apis" {
     "generativelanguage.googleapis.com", # Gemini Developer API (browser voice ephemeral tokens)
     "firebase.googleapis.com",
     "firebasehosting.googleapis.com",
-    "firestore.googleapis.com", # notification inbox projection (ADR-048)
+    "firestore.googleapis.com",    # notification inbox projection (ADR-048)
+    "texttospeech.googleapis.com", # read-aloud (Cloud Text-to-Speech, Chirp 3 HD), on the project's billing
   ])
   project            = var.project_id
   service            = each.value

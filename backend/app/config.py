@@ -104,7 +104,10 @@ class Settings(BaseSettings):
     # Spoken replies: "auto" uses the Gemini API key, with Vertex AI as the fallback when
     # GOOGLE_GENAI_USE_VERTEXAI=true (Cloud Run): Vertex's audio of the same model clips at the start
     # of speech (2026-10-13). "vertex" / "gemini_api" force one, with no fallback.
-    voice_tts_backend: Literal["auto", "vertex", "gemini_api"] = "auto"
+    # "cloud_tts" (Cloud Run, owner 2026-10-15): Cloud Text-to-Speech on the project's billing, with the
+    # Gemini API key as the fallback; the key allows only 100 speech requests a day.
+    voice_tts_backend: Literal["auto", "vertex", "gemini_api", "cloud_tts"] = "auto"
+    voice_tts_cloud_voice: str = "en-US-Chirp3-HD-Kore"
     google_genai_use_vertexai: bool = False
     google_cloud_project: str | None = None
     google_cloud_location: str = "global"
