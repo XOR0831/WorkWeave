@@ -2363,6 +2363,9 @@ def route_action(state: OnboardingState) -> str:
         )
 
     action = state.response_analysis.recommended_action
+    # Completing a subtopic needs a CORRECT assessment of its required objective; without one, check first.
+    if action == "PROGRESS" and not can_complete_current_subtopic(state):
+        action = "ASSESS"
     routes = {
         "TEACH": "teaching",
         "ASSESS": "assessment",

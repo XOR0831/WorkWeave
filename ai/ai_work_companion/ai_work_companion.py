@@ -3008,17 +3008,17 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
 
     class ScheduleModification(BaseModel):
         work_item_ids: list[str] = Field(default_factory=list)
-        shift_minutes: int | None = None
+        # A plain integer: through Vertex AI an optional (nullable) field here always came back empty.
+        shift_minutes: int = 0
         start: datetime | None = None
         end: datetime | None = None
         title: str | None = None
 
-    modification_llm = llm_chat.with_structured_output(
-        ScheduleModification
-    )
-
-    modification = modification_llm.invoke([
-        SystemMessage(content=f"""
+    # The genai client with a JSON schema, as elsewhere in this graph: the LangChain structured output
+    # returned no time change through Vertex AI, so every edit asked "What would you like to change".
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[f"""
             Extract changes requested for an existing schedule proposal.
 
             Current local datetime: {now.isoformat()}
@@ -3032,7 +3032,8 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
               Leave it empty when the employee means the whole proposal: "it",
               "them", "both", "all of them", "the schedule", or no task named.
             - shift_minutes: a relative move. "30 minutes later" -> 30,
-              "an hour earlier" -> -60. Leave start null then.
+              "an hour earlier" -> -60, 0 when no relative move is requested.
+              Leave start null then.
             - start: a new start time. "at 1 PM" -> today at 1 PM,
               "an hour from now" -> the current local datetime plus one hour.
             - end: only when a new end time is explicitly requested.
@@ -3043,11 +3044,14 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
             - Return null for fields not requested.
             - Resolve midnight correctly.
             - Do not approve or create calendar events.
-        """),
-        HumanMessage(
-            content=state.conversation.user_message or ""
-        )
-    ])
+        """, state.conversation.user_message or ""],
+        config={
+            "response_mime_type": "application/json",
+            "response_json_schema": ScheduleModification.model_json_schema(),
+        },
+    )
+
+    modification = ScheduleModification.model_validate_json(response.text or "{}")
 
     tasks = scheduling.proposal.tasks
 

@@ -15,6 +15,11 @@ import sys
 def main() -> int:
     job = json.loads(os.environ["WORKWEAVE_INGEST"])
     sys.path.insert(0, os.getcwd())
+    # Her database.py builds a default engine on import from her .env (PORT, DB_NAME, PASS). The
+    # container has no .env of hers, and a missing PORT makes that import fail ("invalid literal for
+    # int()"). A placeholder lets the import succeed; configure() below replaces that engine, so the
+    # value is never used, locally or in the container.
+    os.environ.setdefault("PORT", "5432")
     try:
         import database  # her module
 
