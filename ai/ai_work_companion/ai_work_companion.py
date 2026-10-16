@@ -3009,7 +3009,7 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
     class ScheduleModification(BaseModel):
         work_item_ids: list[str] = Field(default_factory=list)
         # A plain integer: through Vertex AI an optional (nullable) field here always came back empty.
-        shift_minutes: int = 0
+        shift_minutes: int = Field(default=0, description="Minutes to move the events: 30 later -> 30, an hour earlier -> -60, 0 when no relative move is requested.")
         start: datetime | None = None
         end: datetime | None = None
         title: str | None = None
@@ -3017,7 +3017,7 @@ def modify_schedule_proposal(state: WorkCompanionState) -> WorkCompanionState:
     # The genai client with a JSON schema, as elsewhere in this graph: the LangChain structured output
     # returned no time change through Vertex AI, so every edit asked "What would you like to change".
     response = client.models.generate_content(
-        model=GEMINI_MODEL,
+        model=GEMINI_REASONING_MODEL,
         contents=[f"""
             Extract changes requested for an existing schedule proposal.
 
