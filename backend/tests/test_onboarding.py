@@ -175,7 +175,7 @@ def test_visitor_copy_keeps_the_sop_history_and_current_pointer(client, engine):
 
 
 def test_each_company_cites_its_own_current_source(client):
-    for company, persona, expected in (("harbor", "Nora", ("BPO-SOP-001", "1.1")), ("acme", "Sam", ("OPS-SOP-001", "1.1"))):
+    for company, persona, expected in (("harbor", "Nora", ("BPO-SOP-001", "1.2")), ("acme", "Sam", ("OPS-SOP-001", "1.2"))):
         open_company(client, company)
         pick(client, persona)
         assert [(v["document_code"], v["version"]) for v in overview(client)["source_versions"]] == [expected]

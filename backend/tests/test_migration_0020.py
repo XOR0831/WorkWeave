@@ -47,4 +47,4 @@ def test_a_fresh_harbor_demo_gets_its_own_searchable_copy(client, engine):
     assert ws not in BASELINES
     with engine.connect() as c:
         copied = dict(c.execute(text(EMBEDDED), {"w": [ws]}).all())
-    assert copied == {"BPO-PRC-004": 9, "BPO-SOP-001": 3}
+    assert copied == {"BPO-PRC-004": 9, "BPO-SOP-001": 14}  # BPO-SOP-001 is v1.2 from 0021
