@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Composer, ScriptPrompts, SourceDrawer, Transcript } from "@/components/chat";
+import { ScriptPrompts, SourceDrawer, Transcript } from "@/components/chat";
 import { Dialog, ErrorNotice, Evidence, OriginTag, Status, humanize } from "@/components/ui";
 import { newKey, useCommand, useSession } from "@/lib/preview/client-context";
 import { checklistEvidence } from "@/lib/domain/rules";
+import { ChatVoiceComposer, KT_VOICE, ListenButton, ReadAloudControls, useChatVoice } from "@/features/voice/ChatVoice";
 import type { Citation, ExitKtCase, KtFinding } from "@/types/contracts";
 
 export function FindingsArea({ c }: { c: ExitKtCase }) {
@@ -220,6 +221,8 @@ export function SuccessorView({ c }: { c: ExitKtCase }) {
   const [cite, setCite] = useState<Citation | null>(null);
   const v = c.package.versions.find((x) => x.package_version_id === c.package.current_approved_version_id);
   const received = v && c.package.receipts.some((r) => r.package_version_id === v.package_version_id);
+  // Voice (ADR-045): the same Exit KT channel as the case assistant; the questions are this person's own conversation.
+  const cv = useChatVoice({ channel: KT_VOICE, conversationId: c.exit_kt_case_id, messages: c.successor_qa, enabled: Boolean(v) && c.kt_available });
   if (!v)
     return (
       <div className="state">
@@ -268,11 +271,12 @@ export function SuccessorView({ c }: { c: ExitKtCase }) {
             onCite={setCite}
             messages={[
               { id: "intro", sender: "AI", text: "Ask about the approved package. Answers use only the approved snapshot and permitted sources.", provenance: "SCRIPTED_FIXTURE" },
-              ...c.successor_qa.map((m) => ({ id: m.message_id, sender: m.sender, text: m.text, provenance: m.provenance, citations: m.citations })),
+              ...c.successor_qa.map((m) => ({ id: m.message_id, sender: m.sender, text: m.text, provenance: m.provenance, citations: m.citations, meta: <ListenButton cv={cv} m={m} /> })),
             ]}
           />
           <ScriptPrompts prompts={c.successor_prompts} disabled={cmd.pending} onPick={(p) => void send(p.text, "TEXT", p.prompt_id)} />
-          <Composer label="Ask about the package" onSend={send} pending={cmd.pending} />
+          {c.kt_available && <ReadAloudControls cv={cv} />}
+          <ChatVoiceComposer cv={cv} label="Ask about the package" onSend={send} pending={cmd.pending} />
         </section>
       </aside>
       <SourceDrawer citation={cite} onClose={() => setCite(null)} />
