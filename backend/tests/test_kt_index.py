@@ -77,6 +77,12 @@ def companion_finds(engine, ws: str, question: str) -> list[dict]:
         return [dict(r) for r in c.execute(text(COMPANION_SEARCH), {"o": org, "w": ws, "q": str(vec(question))}).mappings()]
 
 
+def test_labels_name_the_area_its_author_and_the_artifact():
+    assert kt_index.labels({"title": "Vendor contacts", "area": "Parts vendor escalation", "author": "Alex Rivera", "artifact_type": "CONTACT_GUIDE"}) == (
+        "Parts vendor escalation (knowledge transferred from Alex Rivera)", "Contact guide: Vendor contacts")
+    assert kt_index.labels({"title": "Vendor contacts", "area": None, "author": None, "artifact_type": None}) == ("Vendor contacts", "Vendor contacts")
+
+
 def test_chunks_keep_lines_whole_and_split_only_what_is_too_long():
     assert kt_index.chunks_of("1. Cite the source version.\n\n2. Keep the cause unknown.\n") == ["1. Cite the source version.\n2. Keep the cause unknown."]
     long_line = " ".join(f"w{i}" for i in range(320))
@@ -104,7 +110,8 @@ def test_promoted_knowledge_is_indexed_and_the_companion_search_finds_it(client,
     assert p["index_status"] == "READY" and p["indexed_at"] and p["index_error"] is None and p["index_locked_at"] is None
     assert embedder == [["Requesting evidence-based clarification\n\n1. Cite the source version.\n2. Keep the cause unknown."]]
     found = companion_finds(engine, ws, "cite the source version")
-    assert found == [{"document_code": "KT-001", "topic": "Requesting evidence-based clarification", "subtopic": "Transferred knowledge",
+    assert found == [{"document_code": "KT-001", "topic": "Evidence-based escalation practice (knowledge transferred from Alex Rivera)",
+                      "subtopic": "Checklist: Requesting evidence-based clarification",
                       "content": "1. Cite the source version.\n2. Keep the cause unknown."}]
     assert count(engine, ws, "SELECT count(*) FROM workweave.knowledge_chunks WHERE workspace_id=:w AND embedding_model='test-embedding' AND embedding_dimension=8") == 1
     assert ok(client.get("/api/exit-kt/case"))["artifacts"][0]["promotion"]["index_status"] == "READY"

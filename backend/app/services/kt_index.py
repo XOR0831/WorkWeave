@@ -7,7 +7,8 @@ promotions, embeds the approved text and writes what every graph's retrieval rea
   account), created with the version at promotion; the searches require it and revocation acts on it.
   A promotion from before this indexer has none and can't get one (an approved version's source is
   immutable), so it fails with that reason; a fresh demo run doesn't have that problem;
-- one knowledge section (topic = the artifact's title) and its chunks with embeddings, using the same
+- one knowledge section (labels(): the knowledge area and who it came from, then the artifact type
+  and title) and its chunks with embeddings, using the same
   embedding model and size as the AI engineer's ingestion (app/integrations/embeddings.py).
 Then the promotion is READY. Everything stays in the promotion's own workspace, so a demo visitor's
 knowledge is only searchable in their run and is purged with it.
@@ -96,11 +97,32 @@ RETURNING promotion_id, organization_id, workspace_id, document_version_id, arti
 """
 
 SUBJECT = f"""
-SELECT v.content, v.source_id, v.approval_status, v.temporal_status, d.title, d.current_version_id
+SELECT v.content, v.source_id, v.approval_status, v.temporal_status, d.title, d.current_version_id,
+       a.artifact_type, i.title AS area, e.first_name || ' ' || e.last_name AS author
 FROM {W}.knowledge_document_versions v
 JOIN {W}.knowledge_documents d ON d.organization_id=v.organization_id AND d.workspace_id=v.workspace_id AND d.document_id=v.document_id
+LEFT JOIN {W}.exit_kt_artifact_revisions r ON r.organization_id=v.organization_id AND r.workspace_id=v.workspace_id AND r.artifact_revision_id=:r
+LEFT JOIN {W}.exit_kt_artifacts a ON a.organization_id=r.organization_id AND a.workspace_id=r.workspace_id AND a.artifact_id=r.artifact_id
+LEFT JOIN {W}.exit_kt_knowledge_items i ON i.organization_id=a.organization_id AND i.workspace_id=a.workspace_id AND i.kt_item_id=a.kt_item_id
+LEFT JOIN {W}.exit_kt_cases c ON c.organization_id=i.organization_id AND c.workspace_id=i.workspace_id AND c.exit_kt_case_id=i.exit_kt_case_id
+LEFT JOIN {W}.employees e ON e.organization_id=c.organization_id AND e.workspace_id=c.workspace_id AND e.employee_id=c.employee_id
 WHERE v.organization_id=:o AND v.workspace_id=:w AND v.document_version_id=:v
 """
+
+ARTIFACT_LABEL = {"PROCEDURE": "Procedure", "PROCESS": "Process", "TROUBLESHOOTING_GUIDE": "Troubleshooting guide", "CONTACT_GUIDE": "Contact guide",
+                  "CHECKLIST": "Checklist", "REFERENCE": "Reference", "SOP_UPDATE_PROPOSAL": "SOP update proposal"}
+
+
+def labels(s: dict[str, Any]) -> tuple[str, str]:
+    """The section's topic and subtopic, which the graphs read to choose a document to search (the Work
+    Companion picks one scope by title, topic and subtopic). The knowledge area and who it came from,
+    then the artifact type and title: measured 2026-10-15 against her scope prompt, these are chosen
+    for questions about that practice and don't take SOP questions."""
+    title = (s.get("title") or "").strip() or SUBTOPIC
+    area = (s.get("area") or "").strip() or title
+    topic = f"{area} (knowledge transferred from {s['author']})" if s.get("author") else area
+    kind = ARTIFACT_LABEL.get(s.get("artifact_type") or "")
+    return topic[:200], (f"{kind}: {title}" if kind else title)[:200]
 
 
 class _Permanent(Exception):
@@ -122,18 +144,18 @@ def _write(conn: Connection, p: dict[str, Any], s: dict[str, Any], pieces: list[
     q = {"o": o, "w": w, "v": v}
     conn.execute(text(f"DELETE FROM {W}.knowledge_chunks WHERE organization_id=:o AND workspace_id=:w AND document_version_id=:v"), q)
     conn.execute(text(f"DELETE FROM {W}.knowledge_sections WHERE organization_id=:o AND workspace_id=:w AND document_version_id=:v"), q)
-    title = s["title"].strip() or "Transferred knowledge"
+    topic, subtopic = labels(s)
     section = conn.execute(
         text(f"""INSERT INTO {W}.knowledge_sections (organization_id, workspace_id, document_version_id, section_key, topic_heading, subtopic_heading, topic_order_index, subtopic_order_index)
                  VALUES (:o, :w, :v, 'kt:1', :t, :st, 1, 1) RETURNING section_id"""),
-        {**q, "t": title, "st": SUBTOPIC},
+        {**q, "t": topic, "st": subtopic},
     ).scalar_one()
     for i, (piece, vec) in enumerate(zip(pieces, e.vectors, strict=True)):
         conn.execute(
             text(f"""INSERT INTO {W}.knowledge_chunks (organization_id, workspace_id, document_version_id, source_id, source_section_id, section_path, heading, content,
                                                        chunk_index, embedding, embedding_model, embedding_dimension, index_generation, metadata)
                      VALUES (:o, :w, :v, :s, :sec, CAST(:path AS jsonb), :h, :c, :i, CAST(:emb AS public.vector), :m, :d, 'kt-index-1', CAST(:meta AS jsonb))"""),
-            {**q, "s": sid, "sec": section, "path": json.dumps([title]), "h": SUBTOPIC, "c": piece, "i": i, "emb": json.dumps(vec), "m": e.model, "d": e.dimension,
+            {**q, "s": sid, "sec": section, "path": json.dumps([topic]), "h": subtopic, "c": piece, "i": i, "emb": json.dumps(vec), "m": e.model, "d": e.dimension,
              "meta": json.dumps({"origin": "EXIT_KT_PROMOTION"})},
         )
     conn.execute(
@@ -164,7 +186,7 @@ def index_once(only_workspace: str | None = None) -> str | None:
         row = conn.execute(text(CLAIM), {"stale": f"{int(LOCK_TIMEOUT.total_seconds())} seconds", "only": only_workspace}).mappings().first()
         p = dict(row) if row else None
         if p:
-            s = conn.execute(text(SUBJECT), {"o": p["organization_id"], "w": p["workspace_id"], "v": p["document_version_id"]}).mappings().first()
+            s = conn.execute(text(SUBJECT), {"o": p["organization_id"], "w": p["workspace_id"], "v": p["document_version_id"], "r": p["artifact_revision_id"]}).mappings().first()
             s = dict(s) if s else None
     if not p:
         return None
@@ -178,7 +200,7 @@ def index_once(only_workspace: str | None = None) -> str | None:
             lease = conn.execute(text(f"SELECT index_status, index_locked_at FROM {W}.knowledge_promotions WHERE promotion_id=:p FOR UPDATE"), {"p": p["promotion_id"]}).one()
             if lease.index_status != "PENDING" or lease.index_locked_at != p["index_locked_at"]:
                 return "retry"  # another worker took it over; it'll finish it
-            s2 = conn.execute(text(SUBJECT), {"o": p["organization_id"], "w": p["workspace_id"], "v": p["document_version_id"]}).mappings().first()
+            s2 = conn.execute(text(SUBJECT), {"o": p["organization_id"], "w": p["workspace_id"], "v": p["document_version_id"], "r": p["artifact_revision_id"]}).mappings().first()
             _searchable(dict(s2) if s2 else None, p["document_version_id"])
             _write(conn, p, s, pieces, e)
         log.info("kt index: promotion %s ready (%d chunks)", p["promotion_id"], len(pieces))
