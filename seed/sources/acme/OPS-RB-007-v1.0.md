@@ -3,9 +3,9 @@
 | Document control | Value |
 | --- | --- |
 | Organization | Acme Infrastructure (synthetic demo organization) |
-| Version | 1.0 — synthetic draft for owner review |
+| Version | 1.0 |
 | Document owner | Morgan Lee, synthetic fixture reviewer |
-| Status | Draft; intended as `APPROVED` / `CURRENT` in the Acme test workspace after owner review |
+| Status | `APPROVED` / `CURRENT` in the Acme demo workspace (synthetic approval, product owner 2026-10-16) |
 | Related documents | OPS-SOP-001 v1.1 *Deployment and rollback reporting* (approved sources, reported vs verified facts) |
 | Related work | INC-203 (payment API timeout), INC-221 (network latency), ACT-101 (production database maintenance) |
 | Related competencies | Payment gateway; Incident response; Network diagnostics; Database operations; Maintenance procedures |

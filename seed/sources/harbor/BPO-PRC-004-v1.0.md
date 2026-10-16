@@ -3,9 +3,9 @@
 | Document control | Value |
 | --- | --- |
 | Organization | Harbor Support (synthetic demo organization) |
-| Version | 1.0 — synthetic draft for owner review |
+| Version | 1.0 |
 | Document owner | Ravi Patel, synthetic fixture reviewer |
-| Status | Draft; intended as `APPROVED` / `CURRENT` in the Harbor test workspace after owner review |
+| Status | `APPROVED` / `CURRENT` in the Harbor demo workspace (synthetic approval, product owner 2026-10-16) |
 | Related documents | BPO-SOP-001 v1.1 *Customer account escalation* (approved sources, reported vs verified facts, private data) |
 | Related work | CASE-104 (billing clarification), ACT-105 (account escalation refresher) |
 | Related competencies | Account escalation; Customer privacy; Case documentation |
